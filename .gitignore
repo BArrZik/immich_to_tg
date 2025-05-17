@@ -1,0 +1,4 @@
+/data/
+.env
+/app/.idea/
+/app/.venv/

@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  app:
+    build: app
+    expose:
+      - "8000"
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=prod
+    volumes:
+      - ./app:/app
+    restart: unless-stopped
+    networks:
+      - app_network
+
+
+  db:
+    image: postgres:17
+    container_name: postgres_db
+    env_file:
+      - .env
+    volumes:
+      - ./data/postgres_data:/var/lib/postgresql/data  # Volume для хранения данных PostgreSQL
+    ports:
+      - "5432:5432"
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
