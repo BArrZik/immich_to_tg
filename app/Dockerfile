@@ -1,52 +1,69 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+# ==========================================
+# Stage 1: Builder
+# ==========================================
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 WORKDIR /app
 
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
-
-# Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
 
-# Install the project's dependencies using the lockfile and settings
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    libheif-dev \
+    libde265-dev \
+    pkg-config \
+    python3-dev \
+    gcc \
+    musl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ⚠️ pyheif FIX: Explicitly set flags for C extensions
+ENV CFLAGS="-I/usr/include/libheif"
+ENV LDFLAGS="-lheif"
+
+# 1. Install dependencies only (no project files yet)
+# This RUN command uses mounts to read pyproject.toml and uv.lock
+RUN --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project --no-dev
 
+# 2. Add the source code to the container
 ADD . /app
 
-# Then, add the rest of the project source code and install it
-# Installing separately from its dependencies allows optimal layer caching
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+# 3. Install the project itself (the source code is now present)
+# This uses the previously installed dependencies.
+RUN uv sync --frozen --no-dev
 
-# Place executables in the environment at the front of the path
+# ==========================================
+# Stage 2: Final / Runtime
+# Minimal image containing only the app and runtime libraries
+# ==========================================
+FROM python:3.13-slim-bookworm
+
+WORKDIR /app
+
+# Install ONLY runtime libraries
+# - libpq5: Runtime for psycopg2
+# - libheif1, libde265-0: Runtime for pyheif
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    libheif1 \
+    libde265-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the environment from the builder stage
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app
+
+# Add the virtualenv to PATH
 ENV PATH="/app/.venv/bin:$PATH"
-#ENV PYTHONPATH="./app"
 
-# Reset the entrypoint, don't invoke `uv`
-ENTRYPOINT []
-# linux locale
-#RUN apt-get update
-#RUN apt-get install -y locales
-#RUN sed -i -e 's/# ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen && \
-#    locale-gen
-#ENV LC_ALL ru_RU.UTF-8
-#ENV LANG ru_RU.UTF-8
-#ENV LANGUAGE ru_RU:ru
+# Setup Locale (Optional but recommended for image processing/filenames)
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
-# Add the community repository for musl-locales
-
-# Install musl-locales and set up Russian locale
-#RUN apk add --no-cache musl-locales \
-#    && echo "ru_RU.UTF-8 UTF-8" > /etc/locale.gen \
-#    && locale-gen
-
-# Set locale environment variables
-#ENV LC_ALL=ru_RU.UTF-8
-#ENV LANG=ru_RU.UTF-8
-#ENV LANGUAGE=ru_RU:ru
-
-CMD ["uv", "run", "main.py"]
-#CMD ["sleep", "1000000"]
+CMD ["python", "main.py"]

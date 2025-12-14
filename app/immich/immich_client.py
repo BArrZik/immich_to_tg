@@ -266,6 +266,7 @@ class ImmichService:
                 return response.status_code == 200
         except Exception as e:
             logger.warning(f"Connection test failed: {str(e)}")
+            logger.error(f"Connection test failed: {e}")
             return False
 
     def _update_lru(self, telegram_id: int):

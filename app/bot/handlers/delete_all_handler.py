@@ -33,4 +33,4 @@ async def delete_all_handler(bot_update, context):
         update(MediaFile).where(MediaFile.user_id == user.user_id).values(deleted_at=now))
 
     db.commit()
-    bot_update.message.reply_text("Все ваши данные были удалены.")
+    await bot_update.message.reply_text("Все ваши данные были удалены.")

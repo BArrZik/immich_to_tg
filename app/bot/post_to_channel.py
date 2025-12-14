@@ -1,5 +1,5 @@
 # services/post_to_channel.py
-import asyncio
+# import asyncio
 import json
 import os
 import shutil
@@ -7,21 +7,21 @@ import subprocess
 import tempfile
 from datetime import datetime
 from typing import Optional, Tuple, List
-import httpx
-from geopy.geocoders import Nominatim
-from telegram import InputMediaPhoto, InputMediaVideo
+# import httpx
+# from geopy.geocoders import Nominatim
+# from telegram import InputMediaPhoto, InputMediaVideo, Update
 # from utils.image_analyzer import generate_image_description
 from immich.immich_client import immich_service
 from postgres.models import MediaFile, User
-from utils import config
+# from utils import config
 from telegram.error import TelegramError
 
 from utils.logger import logger
 
-from PIL import Image
-import io
-import pyheif
-import piexif
+# from PIL import Image
+# import io
+# import pyheif
+# import piexif
 
 
 class MediaPoster:
@@ -33,67 +33,148 @@ class MediaPoster:
         try:
             media_data = await self._download_media(user, media_file)
             logger.info(f"type: {type(media_data)}")
+            raw_media_data = media_data
             if not media_data:
                 return False
 
             # Определяем формат файла
             file_ext = media_file.media_url.lower().split('.')[-1] if media_file.media_url else ''
             needs_conversion = file_ext in ['heic', 'heif']
-            converted_file = None
+            # converted_file = None
 
-            try:
-                # Конвертируем HEIC/HEIF в JPG если нужно
-                if needs_conversion:
+            # try:
+            # Конвертируем HEIC/HEIF в JPG если нужно
+            if needs_conversion:
 
-                    logger.info(f"Converting HEIC/HEIF to JPG for media {media_file.media_id}")
+                logger.info(f"Converting HEIC/HEIF to JPG for media {media_file.media_id}")
 
-                    # Конвертируем в памяти
-                    media_data = self._convert_heic_to_jpg(media_data)
-                    logger.info(f"type: {type(media_data)}")
+                # Конвертируем в памяти
+                media_data = self._convert_heic_to_jpg(media_data)
+                logger.info(f"type: {type(media_data)}")
 
-                caption = await self._generate_caption(media_file)
-                # caption = ""
+            caption = await self._generate_caption(media_file)
+            # caption = ""
 
-                if media_file.media_type == 'image':
-                    await self.app.bot.send_photo(
-                        chat_id=telegram_channel_id,
+            filename = f"base_filename.{file_ext}"
 
-                        photo=media_data,
-                        caption=caption,
-                        parse_mode='Markdown'
-                    )
-                elif media_file.media_type == 'video':
-                    return await self._send_video_safely(
-                        chat_id=telegram_channel_id,
-                        video_data=media_data,
-                        caption=caption,
-                        filename=media_file.media_url.split('/')[-1] if media_file.media_url else 'video.mp4',
-                        media_file=media_file
-                    )
-                elif media_file.media_type == 'gif':
-                    await self.app.bot.send_animation(
-                        chat_id=telegram_channel_id,
-                        animation=media_data,
-                        filename='animation.gif',
-                        caption=caption,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    logger.error(f"unknown media_type: {media_file.media_type}")
-                    return False
+            if media_file.media_type == 'image':
+                filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'photo.jpg'
+                post = await self.app.bot.send_photo(
+                    chat_id=telegram_channel_id,
+                    photo=media_data,
+                    caption=caption,
+                    parse_mode='Markdown'
+                )
+            elif media_file.media_type == 'video':
+                filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'video.mp4'
 
-                logger.info(f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
-                return True
-            finally:
-                # Закрываем временные файлы если они были
-                if converted_file:
-                    converted_file.close()
+                post = await self._send_video_safely(
+                    chat_id=telegram_channel_id,
+                    video_data=media_data,
+                    caption=caption,
+                    filename=filename,
+                    media_file=media_file
+                )
+                # return post
+            elif media_file.media_type == 'gif':
+                filename = "animation.gif"
+                post = await self.app.bot.send_animation(
+                    chat_id=telegram_channel_id,
+                    animation=media_data,
+                    filename=filename,
+                    caption=caption,
+                    parse_mode='Markdown'
+                )
+            else:
+                logger.error(f"unknown media_type: {media_file.media_type}")
+                return False
+            logger.info(post)
+
+            chat_full_info = await self.app.bot.get_chat(telegram_channel_id)
+            discussion_chat_id = chat_full_info.linked_chat_id
+            main_post_message_id = post.message_id
+
+            # if discussion_chat_id:
+            #     # 2. Use the helper function to get the correct discussion ID (D)
+            #     discussion_reply_id = await self.get_discussion_channel_message_id(
+            #         main_message_id=main_post_message_id,
+            #         discussion_chat_id=discussion_chat_id
+            #     )
+            #
+            #     if discussion_reply_id:
+            #         # 3. Use the discussion ID (D) as reply_to_message_id
+            #         #    when sending the document to the discussion group.
+            #         try:
+            #             post_doc = await self.app.bot.send_document(
+            #                 chat_id=discussion_chat_id,
+            #                 document=raw_media_data,
+            #                 filename=filename,
+            #                 # Use the found discussion ID (D) here
+            #                 reply_to_message_id=discussion_reply_id
+            #             )
+            #             logger.info(f"Document successfully sent to comments using D: {post_doc}")
+            #             logger.info(
+            #                 f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
+            #             return True
+            #
+            #         except Exception as e:
+            #             logger.error(f"Failed to send document to comments using D: {e}")
+            #             # If this still fails, there might be a separate permission or file size issue
+            #             return False
+            #     else:
+            #         logger.error("Could not find discussion message ID, skipping document post to comments.")
+            #         return False  # Or True, depending on whether the document post is critical
+            # else:
+            #     logger.warning("No linked discussion chat found, skipping document post to comments.")
+            #     return True  # Post to main channel succeeded, but comments skipped
+
+            logger.info(f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
+            return True
+            # finally:
+            #     # Закрываем временные файлы если они были
+            #     if converted_file:
+            #         converted_file.close()
         except TelegramError as e:
             print(f"Telegram error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}, channel_id: {telegram_channel_id}. Error: {str(e)}")
             return False
         except Exception as e:
             print(f"Error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}. Error: {str(e)}")
             return False
+    #
+    # async def get_discussion_channel_message_id(self, main_message_id: int, discussion_chat_id: int) -> Optional[int]:
+    #     """
+    #     Finds the message ID (D) in the discussion chat that corresponds
+    #     to the original message ID (M) in the main channel.
+    #     """
+    #     logger.info(f"Attempting to find discussion message ID for main ID: {main_message_id}")
+    #
+    #     # We must limit the updates, as fetching all can be slow.
+    #     # The new post is usually one of the most recent.
+    #     # The timeout keeps the connection open briefly, waiting for the update.
+    #     # You might need to adjust limit and timeout based on your bot's traffic.
+    #     await asyncio.sleep(5)
+    #
+    #     logger.info(await self.app.bot.get_updates(
+    #         timeout=5,  # Wait up to 5 seconds for new updates
+    #         limit=20  # Check the last 20 updates
+    #     ))
+    #     logger.info(f"Got updates for message ID for main ID: {main_message_id}")
+    #
+
+        # Check updates in reverse order (most recent first) for efficiency
+        # for update in reversed(updates):
+        #     message = update.effective_message
+        #     if message and message.chat_id == discussion_chat_id:
+        #         logger.info(f"Found discussion message ID for main ID: {message.message_id} - {message}")
+        #         # Check if this message was forwarded from the main message (M)
+        #         # The API returns the *original* channel message ID (M)
+        #         # in forward_from_message_id when seen in the discussion group updates.
+        #         if message.forward_origin.message_id == main_message_id:
+        #             logger.info(f"Found discussion message ID: {message.message_id}")
+        #             return message.message_id  # This is the ID D
+        #
+        # logger.warning(f"Could not find discussion message ID for main ID: {main_message_id}")
+        # return None
 
     def _format_exif_info(self, info: dict) -> str:
         """Форматирование EXIF данных в текст"""

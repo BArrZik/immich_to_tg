@@ -9,18 +9,19 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    environment:
-      - APP_ENV=dev
-    volumes:
-      - ./app:/app
+#    volumes:
+#      - ./app:/app
     restart: unless-stopped
     networks:
       - app_network
+      - immich_default
+    depends_on:
+      - db
 
 
   db:
     image: postgres:17
-    container_name: postgres_db
+    container_name: postgres_db_immich
     env_file:
       - .env
     volumes:
@@ -31,5 +32,7 @@ services:
       - app_network
 
 networks:
+  immich_default:
+    external: true
   app_network:
     driver: bridge
