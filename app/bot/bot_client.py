@@ -1,6 +1,7 @@
 from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, Application
 
+from bot.handlers.discussion_forward_tracker_handler import discussion_forward_handler
 from bot.handlers.error_handler import error_handler
 from bot.handlers.setup_handlers.setup_handlers import setup_handlers
 from bot.handlers.delete_all_handler import delete_all_handler
@@ -22,8 +23,12 @@ def refresh_commands(func):
     return wrapped
 
 
-async def update_commands_for_all(bot):
-    """Обновляет команды для всех пользователей и админов"""
+async def update_commands_for_all(bot: ContextTypes.DEFAULT_TYPE.bot) -> None:
+    """
+    Defines commands for all users and admins
+
+    :param bot: telegram bot
+    :return: None"""
     common_commands = [
         BotCommand("start", "Запустить бота"),
         BotCommand("delete_my_data", "Удалить мои данные"),
@@ -47,15 +52,24 @@ async def update_commands_for_all(bot):
         )
 
 
-def init_bot():
+def init_bot() -> Application:
+    """
+    Bot init function
+
+    :return: None
+    """
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     setup_handlers(application)
+    application.add_handler(MessageHandler(
+        (filters.ChatType.GROUPS | filters.ChatType.SUPERGROUP) & filters.IS_AUTOMATIC_FORWARD,
+        discussion_forward_handler
+    ))
     application.add_handler(CommandHandler("delete_my_data", delete_all_handler))
 
     application.add_error_handler(error_handler)
 
-    # Регистрация обработчика команды
     application.add_handler(CommandHandler("process_media", manual_trigger_posting_media_to_channel_job))
+
     # Планирование периодической задачи (в секундах)
     application.job_queue.run_repeating(scheduled_posting_media_to_channel_job, interval=POST_MEDIA_INTERVAL, first=10)
 

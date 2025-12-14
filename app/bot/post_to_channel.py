@@ -1,5 +1,3 @@
-# services/post_to_channel.py
-import asyncio
 import json
 import os
 import shutil
@@ -7,21 +5,12 @@ import subprocess
 import tempfile
 from datetime import datetime
 from typing import Optional, Tuple, List
-import httpx
-from geopy.geocoders import Nominatim
-from telegram import InputMediaPhoto, InputMediaVideo
-# from utils.image_analyzer import generate_image_description
 from immich.immich_client import immich_service
 from postgres.models import MediaFile, User
-from utils import config
 from telegram.error import TelegramError
 
 from utils.logger import logger
-
-from PIL import Image
-import io
-import pyheif
-import piexif
+from bot.handlers.discussion_forward_tracker_handler import forward_tracker
 
 
 class MediaPoster:
@@ -33,61 +22,78 @@ class MediaPoster:
         try:
             media_data = await self._download_media(user, media_file)
             logger.info(f"type: {type(media_data)}")
+            raw_media_data = media_data
             if not media_data:
                 return False
 
             # Определяем формат файла
             file_ext = media_file.media_url.lower().split('.')[-1] if media_file.media_url else ''
             needs_conversion = file_ext in ['heic', 'heif']
-            converted_file = None
 
-            try:
-                # Конвертируем HEIC/HEIF в JPG если нужно
-                if needs_conversion:
+            # Конвертируем HEIC/HEIF в JPG если нужно
+            if needs_conversion:
 
-                    logger.info(f"Converting HEIC/HEIF to JPG for media {media_file.media_id}")
+                logger.info(f"Converting HEIC/HEIF to JPG for media {media_file.media_id}")
 
-                    # Конвертируем в памяти
-                    media_data = self._convert_heic_to_jpg(media_data)
-                    logger.info(f"type: {type(media_data)}")
+                # Конвертируем в памяти
+                media_data = self._convert_heic_to_jpg(media_data)
+                logger.info(f"type: {type(media_data)}")
 
-                caption = await self._generate_caption(media_file)
-                # caption = ""
+            caption = await self._generate_caption(media_file)
 
-                if media_file.media_type == 'image':
-                    await self.app.bot.send_photo(
-                        chat_id=telegram_channel_id,
+            if media_file.media_type == 'image':
+                filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'photo.jpg'
+                post = await self.app.bot.send_photo(
+                    chat_id=telegram_channel_id,
+                    photo=media_data,
+                    caption=caption,
+                    parse_mode='Markdown'
+                )
+            elif media_file.media_type == 'video':
+                filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'video.mp4'
 
-                        photo=media_data,
-                        caption=caption,
-                        parse_mode='Markdown'
+                post = await self._send_video_safely(
+                    chat_id=telegram_channel_id,
+                    video_data=media_data,
+                    caption=caption,
+                    filename=filename,
+                    media_file=media_file
+                )
+                # return post
+            elif media_file.media_type == 'gif':
+                filename = "animation.gif"
+                post = await self.app.bot.send_animation(
+                    chat_id=telegram_channel_id,
+                    animation=media_data,
+                    filename=filename,
+                    caption=caption,
+                    parse_mode='Markdown'
+                )
+            else:
+                logger.error(f"unknown media_type: {media_file.media_type}")
+                return False
+            logger.info(post)
+
+            chat_full_info = await self.app.bot.get_chat(telegram_channel_id)
+            discussion_chat_id = chat_full_info.linked_chat_id
+
+            if discussion_chat_id:
+                discussion_msg_id = await forward_tracker.get(
+                    channel_id=telegram_channel_id,
+                    channel_msg_id=post.message_id,
+                    timeout=100.0
+                )
+
+                if discussion_msg_id:
+                    await self.app.bot.send_document(
+                        chat_id=discussion_chat_id,
+                        document=raw_media_data,
+                        filename=filename,
+                        reply_to_message_id=discussion_msg_id
                     )
-                elif media_file.media_type == 'video':
-                    return await self._send_video_safely(
-                        chat_id=telegram_channel_id,
-                        video_data=media_data,
-                        caption=caption,
-                        filename=media_file.media_url.split('/')[-1] if media_file.media_url else 'video.mp4',
-                        media_file=media_file
-                    )
-                elif media_file.media_type == 'gif':
-                    await self.app.bot.send_animation(
-                        chat_id=telegram_channel_id,
-                        animation=media_data,
-                        filename='animation.gif',
-                        caption=caption,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    logger.error(f"unknown media_type: {media_file.media_type}")
-                    return False
 
-                logger.info(f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
-                return True
-            finally:
-                # Закрываем временные файлы если они были
-                if converted_file:
-                    converted_file.close()
+            logger.info(f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
+            return True
         except TelegramError as e:
             print(f"Telegram error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}, channel_id: {telegram_channel_id}. Error: {str(e)}")
             return False
@@ -101,15 +107,16 @@ class MediaPoster:
         parts = []
 
         if camera := info.get('camera'):
-            parts.append(f"Снято на {camera}")
+            if camera.lower() not in ['none', 'null', 'unknown', 'undefined']:
+                parts.append(f"Снято на {camera}")
 
         if date_str := info.get('date'):
             try:
                 dt = datetime.fromisoformat(date_str)
                 formatted_date = dt.strftime("📅: %a, %d %B %Y, %H:%M %Z")
                 parts.append(formatted_date)
-            except:
-                pass
+            except Exception as e:
+                logger.warn(f"Error parsing date: {e}")
 
         photo_details = []
         if aperture := info.get('aperture'):
@@ -168,7 +175,7 @@ class MediaPoster:
         if media_file.media_type in ['photo', 'gif']:
             try:
                 # description = await generate_image_description(media_file)
-                description = "test description"
+                description = ""
                 parts.append(f"\n{description}")
             except Exception as e:
                 print(f"Error generating description: {str(e)}")
@@ -423,7 +430,6 @@ class MediaPoster:
             logger.error(f"Android compatibility verification failed: {str(e)}")
             return False
 
-
     def _get_video_dimensions(self, file_path: str, orientation: int) -> Tuple[int, int]:
         """Возвращает правильные размеры с учетом ориентации"""
         probe_cmd = [
@@ -439,7 +445,6 @@ class MediaPoster:
         h = int(info['streams'][0]['height'])
 
         return (h, w) if orientation in [5, 6, 7, 8] else (w, h)
-
 
     async def _compress_for_android(self, input_path: str, max_size_mb: int, width: int, height: int) -> Optional[
         Tuple[bytes, int, int]]:

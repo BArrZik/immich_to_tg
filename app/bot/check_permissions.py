@@ -1,8 +1,15 @@
+from telegram import User
+
 from utils import config
 
 
-def is_user_allowed(user) -> bool:
-    """Проверка прав пользователя"""
+def is_user_allowed(user: User) -> bool:
+    """
+    Checks users permissions
+
+    :param user: user
+    :return: True/False
+    """
     # Вариант 1: Проверка по telegram_id
     if user.id in config.ADMIN_IDS:
         return True

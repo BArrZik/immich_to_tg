@@ -11,8 +11,8 @@ services:
       - .env
     environment:
       - APP_ENV=prod
-    volumes:
-      - ./app:/app
+#    volumes:
+#      - ./app:/app
     restart: unless-stopped
     networks:
       - app_network
@@ -20,7 +20,7 @@ services:
 
   db:
     image: postgres:17
-    container_name: postgres_db
+    container_name: postgres_db_immich
     env_file:
       - .env
     volumes:
