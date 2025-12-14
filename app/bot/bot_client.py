@@ -1,6 +1,7 @@
 from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
+from bot.handlers.discussion_forward_tracker_handler import discussion_forward_handler
 from bot.handlers.error_handler import error_handler
 from bot.handlers.setup_handlers.setup_handlers import setup_handlers
 from bot.handlers.delete_all_handler import delete_all_handler
@@ -50,6 +51,10 @@ async def update_commands_for_all(bot):
 def init_bot():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     setup_handlers(application)
+    application.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & filters.IS_AUTOMATIC_FORWARD,
+        discussion_forward_handler
+    ))
     application.add_handler(CommandHandler("delete_my_data", delete_all_handler))
 
     application.add_error_handler(error_handler)

@@ -22,6 +22,7 @@ from utils.logger import logger
 # import io
 # import pyheif
 # import piexif
+from bot.handlers.discussion_forward_tracker_handler import forward_tracker
 
 
 class MediaPoster:
@@ -93,6 +94,21 @@ class MediaPoster:
             chat_full_info = await self.app.bot.get_chat(telegram_channel_id)
             discussion_chat_id = chat_full_info.linked_chat_id
             main_post_message_id = post.message_id
+
+            if discussion_chat_id:
+                discussion_msg_id = await forward_tracker.get(
+                    channel_id=telegram_channel_id,
+                    channel_msg_id=post.message_id,
+                    timeout=5.0
+                )
+
+                if discussion_msg_id:
+                    await self.app.bot.send_document(
+                        chat_id=discussion_chat_id,
+                        document=raw_media_data,
+                        filename=filename,
+                        reply_to_message_id=discussion_msg_id
+                    )
 
             # if discussion_chat_id:
             #     # 2. Use the helper function to get the correct discussion ID (D)
