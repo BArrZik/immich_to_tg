@@ -26,7 +26,12 @@ class ImmichClient:
 
     @staticmethod
     def normalize_url(url: str) -> str:
-        """Нормализация URL адреса с поддержкой портов"""
+        """
+        Normalize URL to make it a HTTP URL (with ports support)
+
+        :param url: url string
+        :return: normalized url
+        """
         url = url.strip()
 
         # Удаляем возможные дублирующиеся слеши
@@ -48,14 +53,30 @@ class ImmichClient:
 
         return url
 
-    async def refresh(self):
+    async def refresh(self) -> None:
+        """
+        Refresh cache
+
+        :return: None
+        """
         self.last_used = datetime.now()
 
     async def is_valid(self, ttl: timedelta) -> bool:
+        """
+        Check validity of cached data
+
+        :param ttl: timedelta
+        :return: True/False
+        """
         return (datetime.now() - self.last_used) < ttl
 
     async def get_album_info(self, album_uuid: str) -> Dict[str, Any]:
-        """Получение информации об альбоме с таймаутами"""
+        """
+        Get info about a specific album with timeouts
+
+        :param album_uuid: album uuid
+        :return: dict
+        """
         try:
             async with asyncio.timeout(30):  # Общий таймаут операции
                 response = await self.client.get(
@@ -75,41 +96,69 @@ class ImmichClient:
             raise
 
     async def get_albums(self) -> List[Dict[str, Any]]:
-        """Get all albums from Immich"""
+        """
+        Get all albums from Immich
+
+        :return: list of albums
+        """
         await self.refresh()
         response = await self.client.get("/api/albums")
         response.raise_for_status()
         return response.json()
 
     async def get_album_assets(self, album_id: str) -> List[Dict[str, Any]]:
-        """Get all assets from specific album"""
+        """
+        Get all assets from specific album
+
+        :param album_id: album id
+        :return: list of album assets
+        """
         await self.refresh()
         response = await self.client.get(f"/api/albums/{album_id}/assets")
         response.raise_for_status()
         return response.json()
 
     async def get_asset_info(self, asset_id: str) -> Dict[str, Any]:
-        """Get detailed information about specific asset"""
+        """
+        Get detailed information about specific asset
+
+        :param asset_id: asset id
+        :return: asset (media) information"""
         await self.refresh()
         response = await self.client.get(f"/api/asset/{asset_id}")
         response.raise_for_status()
         return response.json()
 
     async def get_asset_binary(self, asset_uuid: str) -> bytes:
-        """Download asset binary data"""
+        """
+        Download asset binary data
+
+        :param asset_uuid: asset uuid
+        :return: asset (media) binary data
+        """
         await self.refresh()
         response = await self.client.get(f"/api/assets/{asset_uuid}/original")
         response.raise_for_status()
         return response.content
 
     async def search_metadata(self, query: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Search assets by metadata"""
+        """
+        Search assets by metadata
+
+        :param query: search query
+        :return: list of assets
+        """
         await self.refresh()
         response = await self.client.post("/api/search/metadata", json=query)
         response.raise_for_status()
         return response.json()
 
-    async def close(self):
+    async def close(self) -> None:
+        """
+        Close the client
+
+        :return: None
+        """
         try:
             await self.client.aclose()
         except Exception as e:
@@ -129,13 +178,22 @@ class ImmichService:
         self._cleanup_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
 
-    async def start(self):
-        """Start the cleanup task (call this when an event loop is running)"""
+    async def start(self) -> None:
+        """
+        Start the cleanup task (call this when an event loop is running)
+
+        :return: None"""
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._cleanup_expired_clients())
 
     @staticmethod
     def client_handler(func: Callable[..., Coroutine[Any, Any, T]]) -> Callable[..., Coroutine[Any, Any, T]]:
+        """
+        Handle clients processing - start/stop/refresh
+
+        :param func: function
+        :return: function
+        """
         logger.info("running client_handler")
         @wraps(func)
         async def wrapper(self: 'ImmichService', telegram_id: int, *args, **kwargs) -> T:

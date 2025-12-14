@@ -14,7 +14,12 @@ class SingletonLogger:
             cls._instance._configure_logger()
         return cls._instance
 
-    def _configure_logger(self):
+    def _configure_logger(self) -> None:
+        """
+        Configures the logger for the application.
+
+        :return: None
+        """
         # Настройка формата JSON
         log_handler = logging.StreamHandler()
         formatter = json.JsonFormatter(
@@ -32,7 +37,12 @@ class SingletonLogger:
 
         self.logger = logging.getLogger(__name__)
 
-    def get_logger(self):
+    def get_logger(self) -> logging.Logger:
+        """
+        Returns a singleton instance of the logger.
+
+        :return: singleton instance of the logger
+        """
         return self.logger
 
 # Создаем экземпляр логгера

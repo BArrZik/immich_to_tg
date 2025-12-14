@@ -6,7 +6,14 @@ import datetime
 from postgres.database import SessionLocal
 from postgres.models import User, Channel, ApiKey, ImmichHost, Album, MediaFile
 
-async def delete_all_handler(bot_update, context):
+async def delete_all_handler(bot_update, context) -> None:
+    """
+    Deletes all information about user who requested deletion
+
+    :param bot_update: telegram bot
+    :param context: telegram context
+    :return: None
+    """
     db: Session = SessionLocal()
     telegram_id = bot_update.message.from_user.id
 

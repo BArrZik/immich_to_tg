@@ -8,15 +8,22 @@ from utils.logger import logger
 
 
 class DiscussionForwardTracker:
-    """Трекер маппинга channel_message_id → discussion_message_id"""
+    """Mapping tracker channel_message_id → discussion_message_id"""
 
     def __init__(self, ttl_seconds: int = 300):
         self._mapping: Dict[Tuple[int, int], Tuple[int, datetime]] = {}
         self._ttl = timedelta(seconds=ttl_seconds)
         self._waiters: Dict[Tuple[int, int], asyncio.Event] = defaultdict(asyncio.Event)
 
-    def store(self, channel_id: int, channel_msg_id: int, discussion_msg_id: int):
-        """Сохранить маппинг"""
+    def store(self, channel_id: int, channel_msg_id: int, discussion_msg_id: int) -> None:
+        """
+        Store mapping
+
+        :param channel_id: initial channel id
+        :param channel_msg_id: initial message id
+        :param discussion_msg_id: discussion message id of forwarded message
+        :return: None
+        """
         key = (channel_id, channel_msg_id)
         self._mapping[key] = (discussion_msg_id, datetime.now())
         # Уведомить ожидающих
@@ -25,7 +32,14 @@ class DiscussionForwardTracker:
 
     async def get(self, channel_id: int, channel_msg_id: int,
                   timeout: float = 5.0) -> Optional[int]:
-        """Получить discussion_msg_id с ожиданием"""
+        """
+        Get discussion_msg_id with timeout
+
+        :param channel_id: initial channel id
+        :param channel_msg_id: initial message id
+        :param timeout: discussion message timeout
+        :return: discussion message id
+        """
         key = (channel_id, channel_msg_id)
 
         # Проверить кэш
@@ -45,7 +59,10 @@ class DiscussionForwardTracker:
         return None
 
     def cleanup_expired(self):
-        """Удалить устаревшие записи"""
+        """
+        Delete expired discussion messages
+
+        :return: None"""
         now = datetime.now()
         expired = [k for k, (_, ts) in self._mapping.items()
                    if now - ts > self._ttl]
@@ -59,7 +76,14 @@ forward_tracker = DiscussionForwardTracker()
 
 
 async def discussion_forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик автоматических форвардов из каналов в группы обсуждений"""
+    """
+    Forward handler of channels` messages in groups/supergroups
+
+    :param update: telegram update
+    :param context: telegram context
+    :return: None
+    """
+    logger.debug(f"Tracked forward started for: {update.message}")
     message = update.message
     if not message or not message.is_automatic_forward:
         return
@@ -67,7 +91,7 @@ async def discussion_forward_handler(update: Update, context: ContextTypes.DEFAU
     # forward_origin содержит информацию об оригинальном сообщении
     if message.forward_origin and hasattr(message.forward_origin, 'chat'):
         channel_id = message.forward_origin.chat.id
-        channel_msg_id = message.forward_origin.message_id
+        channel_msg_id = getattr(message.forward_origin, "message_id")
         discussion_msg_id = message.message_id
 
         forward_tracker.store(channel_id, channel_msg_id, discussion_msg_id)

@@ -1,6 +1,4 @@
-import asyncio
-from datetime import datetime, time
-from typing import Generator, List, Dict, Any, Optional, Tuple
+from typing import Generator, List, Dict, Any, Optional
 
 import httpx
 from sqlalchemy import and_
@@ -8,13 +6,12 @@ from sqlalchemy.orm import Session, joinedload
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.check_rights import is_user_allowed
+from bot.check_permissions import is_user_allowed
 from immich.immich_client import ImmichService, immich_service
 from bot.post_to_channel import MediaPoster
 from postgres.database import SessionLocal
-from postgres.models import User, Album, MediaFile, ImmichHost, ApiKey, Channel
+from postgres.models import User, Album, MediaFile, ImmichHost, ApiKey
 from utils.logger import logger
-from utils import config
 
 class MediaJobs:
     def __init__(self):

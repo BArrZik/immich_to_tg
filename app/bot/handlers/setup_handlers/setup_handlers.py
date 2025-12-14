@@ -13,6 +13,7 @@ def setup_handlers(application) -> None:
     State machine for start handler
 
     :param application: telegram bot
+    :return: None
     """
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start_handler)],

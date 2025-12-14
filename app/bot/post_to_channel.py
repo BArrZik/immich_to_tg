@@ -1,5 +1,3 @@
-# services/post_to_channel.py
-# import asyncio
 import json
 import os
 import shutil
@@ -7,21 +5,11 @@ import subprocess
 import tempfile
 from datetime import datetime
 from typing import Optional, Tuple, List
-# import httpx
-# from geopy.geocoders import Nominatim
-# from telegram import InputMediaPhoto, InputMediaVideo, Update
-# from utils.image_analyzer import generate_image_description
 from immich.immich_client import immich_service
 from postgres.models import MediaFile, User
-# from utils import config
 from telegram.error import TelegramError
 
 from utils.logger import logger
-
-# from PIL import Image
-# import io
-# import pyheif
-# import piexif
 from bot.handlers.discussion_forward_tracker_handler import forward_tracker
 
 
@@ -41,9 +29,7 @@ class MediaPoster:
             # Определяем формат файла
             file_ext = media_file.media_url.lower().split('.')[-1] if media_file.media_url else ''
             needs_conversion = file_ext in ['heic', 'heif']
-            # converted_file = None
 
-            # try:
             # Конвертируем HEIC/HEIF в JPG если нужно
             if needs_conversion:
 
@@ -54,9 +40,6 @@ class MediaPoster:
                 logger.info(f"type: {type(media_data)}")
 
             caption = await self._generate_caption(media_file)
-            # caption = ""
-
-            filename = f"base_filename.{file_ext}"
 
             if media_file.media_type == 'image':
                 filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'photo.jpg'
@@ -93,13 +76,12 @@ class MediaPoster:
 
             chat_full_info = await self.app.bot.get_chat(telegram_channel_id)
             discussion_chat_id = chat_full_info.linked_chat_id
-            main_post_message_id = post.message_id
 
             if discussion_chat_id:
                 discussion_msg_id = await forward_tracker.get(
                     channel_id=telegram_channel_id,
                     channel_msg_id=post.message_id,
-                    timeout=5.0
+                    timeout=100.0
                 )
 
                 if discussion_msg_id:
@@ -110,87 +92,14 @@ class MediaPoster:
                         reply_to_message_id=discussion_msg_id
                     )
 
-            # if discussion_chat_id:
-            #     # 2. Use the helper function to get the correct discussion ID (D)
-            #     discussion_reply_id = await self.get_discussion_channel_message_id(
-            #         main_message_id=main_post_message_id,
-            #         discussion_chat_id=discussion_chat_id
-            #     )
-            #
-            #     if discussion_reply_id:
-            #         # 3. Use the discussion ID (D) as reply_to_message_id
-            #         #    when sending the document to the discussion group.
-            #         try:
-            #             post_doc = await self.app.bot.send_document(
-            #                 chat_id=discussion_chat_id,
-            #                 document=raw_media_data,
-            #                 filename=filename,
-            #                 # Use the found discussion ID (D) here
-            #                 reply_to_message_id=discussion_reply_id
-            #             )
-            #             logger.info(f"Document successfully sent to comments using D: {post_doc}")
-            #             logger.info(
-            #                 f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
-            #             return True
-            #
-            #         except Exception as e:
-            #             logger.error(f"Failed to send document to comments using D: {e}")
-            #             # If this still fails, there might be a separate permission or file size issue
-            #             return False
-            #     else:
-            #         logger.error("Could not find discussion message ID, skipping document post to comments.")
-            #         return False  # Or True, depending on whether the document post is critical
-            # else:
-            #     logger.warning("No linked discussion chat found, skipping document post to comments.")
-            #     return True  # Post to main channel succeeded, but comments skipped
-
             logger.info(f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
             return True
-            # finally:
-            #     # Закрываем временные файлы если они были
-            #     if converted_file:
-            #         converted_file.close()
         except TelegramError as e:
             print(f"Telegram error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}, channel_id: {telegram_channel_id}. Error: {str(e)}")
             return False
         except Exception as e:
             print(f"Error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}. Error: {str(e)}")
             return False
-    #
-    # async def get_discussion_channel_message_id(self, main_message_id: int, discussion_chat_id: int) -> Optional[int]:
-    #     """
-    #     Finds the message ID (D) in the discussion chat that corresponds
-    #     to the original message ID (M) in the main channel.
-    #     """
-    #     logger.info(f"Attempting to find discussion message ID for main ID: {main_message_id}")
-    #
-    #     # We must limit the updates, as fetching all can be slow.
-    #     # The new post is usually one of the most recent.
-    #     # The timeout keeps the connection open briefly, waiting for the update.
-    #     # You might need to adjust limit and timeout based on your bot's traffic.
-    #     await asyncio.sleep(5)
-    #
-    #     logger.info(await self.app.bot.get_updates(
-    #         timeout=5,  # Wait up to 5 seconds for new updates
-    #         limit=20  # Check the last 20 updates
-    #     ))
-    #     logger.info(f"Got updates for message ID for main ID: {main_message_id}")
-    #
-
-        # Check updates in reverse order (most recent first) for efficiency
-        # for update in reversed(updates):
-        #     message = update.effective_message
-        #     if message and message.chat_id == discussion_chat_id:
-        #         logger.info(f"Found discussion message ID for main ID: {message.message_id} - {message}")
-        #         # Check if this message was forwarded from the main message (M)
-        #         # The API returns the *original* channel message ID (M)
-        #         # in forward_from_message_id when seen in the discussion group updates.
-        #         if message.forward_origin.message_id == main_message_id:
-        #             logger.info(f"Found discussion message ID: {message.message_id}")
-        #             return message.message_id  # This is the ID D
-        #
-        # logger.warning(f"Could not find discussion message ID for main ID: {main_message_id}")
-        # return None
 
     def _format_exif_info(self, info: dict) -> str:
         """Форматирование EXIF данных в текст"""
@@ -198,15 +107,16 @@ class MediaPoster:
         parts = []
 
         if camera := info.get('camera'):
-            parts.append(f"Снято на {camera}")
+            if camera.lower() not in ['none', 'null', 'unknown', 'undefined']:
+                parts.append(f"Снято на {camera}")
 
         if date_str := info.get('date'):
             try:
                 dt = datetime.fromisoformat(date_str)
                 formatted_date = dt.strftime("📅: %a, %d %B %Y, %H:%M %Z")
                 parts.append(formatted_date)
-            except:
-                pass
+            except Exception as e:
+                logger.warn(f"Error parsing date: {e}")
 
         photo_details = []
         if aperture := info.get('aperture'):
@@ -265,7 +175,7 @@ class MediaPoster:
         if media_file.media_type in ['photo', 'gif']:
             try:
                 # description = await generate_image_description(media_file)
-                description = "test description"
+                description = ""
                 parts.append(f"\n{description}")
             except Exception as e:
                 print(f"Error generating description: {str(e)}")
@@ -520,7 +430,6 @@ class MediaPoster:
             logger.error(f"Android compatibility verification failed: {str(e)}")
             return False
 
-
     def _get_video_dimensions(self, file_path: str, orientation: int) -> Tuple[int, int]:
         """Возвращает правильные размеры с учетом ориентации"""
         probe_cmd = [
@@ -536,7 +445,6 @@ class MediaPoster:
         h = int(info['streams'][0]['height'])
 
         return (h, w) if orientation in [5, 6, 7, 8] else (w, h)
-
 
     async def _compress_for_android(self, input_path: str, max_size_mb: int, width: int, height: int) -> Optional[
         Tuple[bytes, int, int]]:
