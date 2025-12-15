@@ -336,7 +336,7 @@ class MediaJobs:
         finally:
             db.close()
 
-    async def _run_media_job(self, context: ContextTypes.DEFAULT_TYPE = None):
+    async def run_media_job(self, context: ContextTypes.DEFAULT_TYPE = None):
         """Основная задача обработки медиа"""
         logger.info("init_poster")
         await self._init_poster(context)
@@ -350,15 +350,6 @@ class MediaJobs:
         finally:
             await self.immich_service.close_all()
 
-    async def manual_trigger(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("🔄 Запускаю обработку медиа...")
-        try:
-            await self._run_media_job(context)
-            await update.message.reply_text("✅ Обработка медиа завершена")
-        except Exception as e:
-            await update.message.reply_text(f"❌ Ошибка: {str(e)}")
-            logger.error(f"Manual media job error: {str(e)}")
-
 
 # Глобальный экземпляр для использования в задачах
 media_jobs = MediaJobs()
@@ -367,7 +358,7 @@ media_jobs = MediaJobs()
 async def scheduled_posting_media_to_channel_job(context: ContextTypes.DEFAULT_TYPE):
     """Периодическая задача для планировщика"""
     await immich_service.start()
-    await media_jobs._run_media_job(context)
+    await media_jobs.run_media_job(context)
 
 
 async def manual_trigger_posting_media_to_channel_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,4 +366,11 @@ async def manual_trigger_posting_media_to_channel_job(update: Update, context: C
     if not is_user_allowed(update.effective_user):
         await update.message.reply_text("⛔ У вас нет прав для выполнения этой команды")
         return
-    await media_jobs.manual_trigger(update, context)
+    await immich_service.start()
+    await update.message.reply_text("🔄 Запускаю обработку медиа...")
+    try:
+        await media_jobs.run_media_job(context)
+        await update.message.reply_text("✅ Обработка медиа завершена")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {str(e)}")
+        logger.error(f"Manual media job error: {str(e)}")

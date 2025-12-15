@@ -15,7 +15,7 @@ class DiscussionForwardTracker:
         self._ttl = timedelta(seconds=ttl_seconds)
         self._waiters: Dict[Tuple[int, int], asyncio.Event] = defaultdict(asyncio.Event)
 
-    def store(self, channel_id: int, channel_msg_id: int, discussion_msg_id: int) -> None:
+    async def store(self, channel_id: int, channel_msg_id: int, discussion_msg_id: int) -> None:
         """
         Store mapping
 
@@ -39,6 +39,8 @@ class DiscussionForwardTracker:
         :param timeout: discussion message timeout
         :return: discussion message id
         """
+
+        logger.debug(f"Getting cache for key {channel_id}, {channel_msg_id}")
         key = (channel_id, channel_msg_id)
 
         # Проверить кэш
@@ -92,5 +94,5 @@ async def discussion_forward_handler(update: Update, context: ContextTypes.DEFAU
         channel_msg_id = getattr(message.forward_origin, "message_id")
         discussion_msg_id = message.message_id
 
-        forward_tracker.store(channel_id, channel_msg_id, discussion_msg_id)
-        logger.debug(f"Tracked forward: channel {channel_id} msg {channel_msg_id} → discussion msg {discussion_msg_id}")
+        await forward_tracker.store(channel_id, channel_msg_id, discussion_msg_id)
+        logger.debug(f"Tracked forward: channel {channel_id} msg {channel_msg_id} -> discussion msg {discussion_msg_id}")

@@ -75,7 +75,7 @@ class MediaPoster:
 
             if discussion_chat_id:
                 discussion_msg_id = await forward_tracker.get(
-                    channel_id=telegram_channel_id, channel_msg_id=post.message_id, timeout=2000.0
+                    channel_id=telegram_channel_id, channel_msg_id=post.message_id, timeout=10.0
                 )
 
                 if discussion_msg_id:
