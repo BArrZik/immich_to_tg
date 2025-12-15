@@ -1,6 +1,5 @@
 from typing import Generator, List, Dict, Any, Optional
 
-import httpx
 from sqlalchemy import and_
 from sqlalchemy.orm import Session, joinedload
 from telegram import Update
@@ -12,6 +11,7 @@ from bot.post_to_channel import MediaPoster
 from postgres.database import SessionLocal
 from postgres.models import User, Album, MediaFile, ImmichHost, ApiKey
 from utils.logger import logger
+
 
 class MediaJobs:
     def __init__(self):
@@ -30,23 +30,16 @@ class MediaJobs:
         while True:
             db = SessionLocal()
             try:
-                users = db.query(User).join(
-                    ApiKey,
-                    and_(
-                        ApiKey.user_id == User.user_id,
-                        ApiKey.deleted_at.is_(None)
-                    )).join(
-                    ImmichHost,
-                    and_(
-                        ImmichHost.user_id == User.user_id,
-                        ImmichHost.deleted_at.is_(None)
-                    )
-                ).options(
-                    joinedload(User.albums),
-                    joinedload(User.channels)
-                ).filter(
-                    User.deleted_at.is_(None)
-                ).offset(offset).limit(batch_size).all()
+                users = (
+                    db.query(User)
+                    .join(ApiKey, and_(ApiKey.user_id == User.user_id, ApiKey.deleted_at.is_(None)))
+                    .join(ImmichHost, and_(ImmichHost.user_id == User.user_id, ImmichHost.deleted_at.is_(None)))
+                    .options(joinedload(User.albums), joinedload(User.channels))
+                    .filter(User.deleted_at.is_(None))
+                    .offset(offset)
+                    .limit(batch_size)
+                    .all()
+                )
 
                 if not users:
                     logger.info("No more users to process")
@@ -91,11 +84,15 @@ class MediaJobs:
 
                             for media_data in media_items:
                                 # Проверяем что файл не существует И принадлежит текущему пользователю
-                                existing_media = db.query(MediaFile).filter(
-                                    MediaFile.media_url == media_data["media_url"],
-                                    # MediaFile.user_id == user.user_id,  # Добавляем проверку user_id
-                                    MediaFile.deleted_at.is_(None)
-                                ).first()
+                                existing_media = (
+                                    db.query(MediaFile)
+                                    .filter(
+                                        MediaFile.media_url == media_data["media_url"],
+                                        # MediaFile.user_id == user.user_id,  # Добавляем проверку user_id
+                                        MediaFile.deleted_at.is_(None),
+                                    )
+                                    .first()
+                                )
 
                                 if not existing_media:
                                     try:
@@ -107,7 +104,9 @@ class MediaJobs:
                                         db.add(media_file)
                                         db.commit()
                                         processed_media += 1
-                                        logger.info(f"Added new media {media_data['media_uuid']} for user {user.user_id}")
+                                        logger.info(
+                                            f"Added new media {media_data['media_uuid']} for user {user.user_id}"
+                                        )
                                     except Exception as e:
                                         db.rollback()
                                         logger.error(f"Error saving media {media_data['media_uuid']}: {str(e)}")
@@ -133,21 +132,17 @@ class MediaJobs:
             # Получаем telegram_id пользователя
             db = SessionLocal()
             try:
-                user = db.query(User).filter(
-                    User.user_id == user_id,
-                    User.deleted_at.is_(None)
-                ).first()
+                user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
 
                 if not user:
                     logger.error(f"User {user_id} not found")
                     return []
 
-
-                album = db.query(Album).filter(
-                    Album.album_id == album_id,
-                    Album.user_id == user.user_id,
-                    Album.deleted_at.is_(None)
-                ).first()
+                album = (
+                    db.query(Album)
+                    .filter(Album.album_id == album_id, Album.user_id == user.user_id, Album.deleted_at.is_(None))
+                    .first()
+                )
 
                 if not album:
                     logger.error(f"Album {album.album_uuid} not found in database for user {user.telegram_id}")
@@ -162,13 +157,13 @@ class MediaJobs:
             logger.info(f"Requesting album info for {album.album_id}: {album.album_uuid}...")
             album_info = await self.immich_service.get_user_album_info(user.telegram_id, album.album_uuid)
             # logger.info(f"Received album info in {time.time() - start_time:.2f} seconds")
-            logger.info(f"Received album info")
+            logger.info("Received album info")
 
-            if not album_info.get('assets'):
+            if not album_info.get("assets"):
                 logger.info("Album has no assets")
                 return []
 
-            return self._process_assets(album_info['assets'])
+            return self._process_assets(album_info["assets"])
 
         except Exception as e:
             logger.error(f"Error in fetch_media_from_immich: {type(e).__name__}: {str(e)}")
@@ -179,28 +174,32 @@ class MediaJobs:
         processed = []
         for asset in assets:
             try:
-                processed.append({
-                    "media_uuid": asset["id"],
-                    "media_url": asset.get("originalPath") or asset.get("originalUrl"),
-                    "media_type": self._determine_media_type(asset),
-                    "file_size": asset.get("exifInfo", {}).get("fileSizeInByte") or self._get_file_size(asset),
-                    "file_format": self._get_file_format(asset),
-                    "processed": False,
-                    "error": None,
-                    "info": {
-                        "width": asset.get("exifInfo", {}).get("exifImageWidth"),
-                        "height": asset.get("exifInfo", {}).get("exifImageHeight"),
-                        "orientation": int(asset.get("exifInfo", {}).get("orientation")) if asset.get("exifInfo", {}).get("orientation") else 1,
-                        "camera": f"{asset.get('exifInfo', {}).get('make')} {asset.get('exifInfo', {}).get('model')}",
-                        "lens": asset.get("exifInfo", {}).get("lensModel"),
-                        "iso": asset.get("exifInfo", {}).get("iso"),
-                        "aperture": asset.get("exifInfo", {}).get("fNumber"),
-                        "shutter": asset.get("exifInfo", {}).get("exposureTime"),
-                        "focal": asset.get("exifInfo", {}).get("focalLength"),
-                        "date": asset.get("exifInfo", {}).get("dateTimeOriginal"),
-                        "location": self._get_location_info(asset.get("exifInfo", {}))
+                processed.append(
+                    {
+                        "media_uuid": asset["id"],
+                        "media_url": asset.get("originalPath") or asset.get("originalUrl"),
+                        "media_type": self._determine_media_type(asset),
+                        "file_size": asset.get("exifInfo", {}).get("fileSizeInByte") or self._get_file_size(asset),
+                        "file_format": self._get_file_format(asset),
+                        "processed": False,
+                        "error": None,
+                        "info": {
+                            "width": asset.get("exifInfo", {}).get("exifImageWidth"),
+                            "height": asset.get("exifInfo", {}).get("exifImageHeight"),
+                            "orientation": int(asset.get("exifInfo", {}).get("orientation"))
+                            if asset.get("exifInfo", {}).get("orientation")
+                            else 1,
+                            "camera": f"{asset.get('exifInfo', {}).get('make')} {asset.get('exifInfo', {}).get('model')}",
+                            "lens": asset.get("exifInfo", {}).get("lensModel"),
+                            "iso": asset.get("exifInfo", {}).get("iso"),
+                            "aperture": asset.get("exifInfo", {}).get("fNumber"),
+                            "shutter": asset.get("exifInfo", {}).get("exposureTime"),
+                            "focal": asset.get("exifInfo", {}).get("focalLength"),
+                            "date": asset.get("exifInfo", {}).get("dateTimeOriginal"),
+                            "location": self._get_location_info(asset.get("exifInfo", {})),
+                        },
                     }
-                })
+                )
             except Exception as e:
                 logger.error(f"Error processing asset {asset.get('id')}: {str(e)}")
 
@@ -209,12 +208,7 @@ class MediaJobs:
     def _get_file_size(self, asset: dict) -> Optional[int]:
         """Получаем размер файла из разных возможных полей"""
         # Пробуем получить размер из разных возможных полей
-        size_fields = [
-            'fileSize',
-            'size',
-            'fileSizeInByte',
-            'originalFileSize'
-        ]
+        size_fields = ["fileSize", "size", "fileSizeInByte", "originalFileSize"]
 
         for field in size_fields:
             if field in asset.get("exifInfo", {}):
@@ -231,7 +225,7 @@ class MediaJobs:
 
         media_url = asset.get("originalPath") or asset.get("originalUrl")
         if media_url:
-            ext = media_url.split('.')[-1].lower()
+            ext = media_url.split(".")[-1].lower()
             return ext
         return None
 
@@ -241,31 +235,27 @@ class MediaJobs:
         media_url = (asset.get("originalPath") or asset.get("originalUrl") or "").lower()
 
         # Проверка по MIME-типу
-        if 'gif' in mime_type:
-            return 'gif'
-        if 'video' in mime_type:
-            return 'video'
-        if 'image' in mime_type:
-            return 'image'
+        if "gif" in mime_type:
+            return "gif"
+        if "video" in mime_type:
+            return "video"
+        if "image" in mime_type:
+            return "image"
 
         # Проверка по расширению файла
-        if media_url.endswith('.gif'):
-            return 'gif'
-        if any(media_url.endswith(ext) for ext in ['.mp4', '.mov', '.webm']):
-            return 'video'
-        if any(media_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.heic', '.heif']):
-            return 'image'
+        if media_url.endswith(".gif"):
+            return "gif"
+        if any(media_url.endswith(ext) for ext in [".mp4", ".mov", ".webm"]):
+            return "video"
+        if any(media_url.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".heic", ".heif"]):
+            return "image"
 
         # Возвращаем исходный тип как fallback
         return asset["type"].lower()
 
     def _get_location_info(self, exif_info: Dict[str, Any]) -> Dict[str, Any]:
         """Формирование информации о местоположении"""
-        location = {
-            "location_name": None,
-            "latitude": None,
-            "longitude": None
-        }
+        location = {"location_name": None, "latitude": None, "longitude": None}
         if not exif_info:
             return location
 
@@ -281,7 +271,7 @@ class MediaJobs:
             location["location_name"] = ", ".join(location_parts)
 
         if exif_info.get("latitude") and exif_info.get("longitude"):
-            location["latitude"], location["longitude"] = exif_info['latitude'], exif_info['longitude']
+            location["latitude"], location["longitude"] = exif_info["latitude"], exif_info["longitude"]
             # return f"{exif_info['latitude']}, {exif_info['longitude']}"
 
         return location
@@ -325,11 +315,15 @@ class MediaJobs:
                 if not channel:
                     continue
 
-                for media in db.query(MediaFile).filter(
-                    MediaFile.user_id == user.user_id,
-                    MediaFile.processed.is_(False),
-                    MediaFile.deleted_at.is_(None)
-                ).all():
+                for media in (
+                    db.query(MediaFile)
+                    .filter(
+                        MediaFile.user_id == user.user_id,
+                        MediaFile.processed.is_(False),
+                        MediaFile.deleted_at.is_(None),
+                    )
+                    .all()
+                ):
                     try:
                         success = await self.media_poster.post_to_channel(user, media, channel.telegram_channel_id)
                         media.posted_to_channel = success
@@ -357,7 +351,6 @@ class MediaJobs:
             await self.immich_service.close_all()
 
     async def manual_trigger(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-
         await update.message.reply_text("🔄 Запускаю обработку медиа...")
         try:
             await self._run_media_job(context)
@@ -366,13 +359,16 @@ class MediaJobs:
             await update.message.reply_text(f"❌ Ошибка: {str(e)}")
             logger.error(f"Manual media job error: {str(e)}")
 
+
 # Глобальный экземпляр для использования в задачах
 media_jobs = MediaJobs()
+
 
 async def scheduled_posting_media_to_channel_job(context: ContextTypes.DEFAULT_TYPE):
     """Периодическая задача для планировщика"""
     await immich_service.start()
     await media_jobs._run_media_job(context)
+
 
 async def manual_trigger_posting_media_to_channel_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды для ручного запуска"""

@@ -30,8 +30,7 @@ class DiscussionForwardTracker:
         if key in self._waiters:
             self._waiters[key].set()
 
-    async def get(self, channel_id: int, channel_msg_id: int,
-                  timeout: float = 5.0) -> Optional[int]:
+    async def get(self, channel_id: int, channel_msg_id: int, timeout: float = 5.0) -> Optional[int]:
         """
         Get discussion_msg_id with timeout
 
@@ -64,8 +63,7 @@ class DiscussionForwardTracker:
 
         :return: None"""
         now = datetime.now()
-        expired = [k for k, (_, ts) in self._mapping.items()
-                   if now - ts > self._ttl]
+        expired = [k for k, (_, ts) in self._mapping.items() if now - ts > self._ttl]
         for k in expired:
             del self._mapping[k]
             self._waiters.pop(k, None)
@@ -89,7 +87,7 @@ async def discussion_forward_handler(update: Update, context: ContextTypes.DEFAU
         return
 
     # forward_origin содержит информацию об оригинальном сообщении
-    if message.forward_origin and hasattr(message.forward_origin, 'chat'):
+    if message.forward_origin and hasattr(message.forward_origin, "chat"):
         channel_id = message.forward_origin.chat.id
         channel_msg_id = getattr(message.forward_origin, "message_id")
         discussion_msg_id = message.message_id

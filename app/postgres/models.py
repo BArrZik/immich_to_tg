@@ -32,6 +32,7 @@ class User(Base):
     albums = relationship("Album", back_populates="user", cascade="all, delete")
     media_files = relationship("MediaFile", back_populates="user", cascade="all, delete")
 
+
 # Таблица channels
 class Channel(Base):
     __tablename__ = "channels"
@@ -47,6 +48,7 @@ class Channel(Base):
     # Связь с таблицей users
     user = relationship("User", back_populates="channels")
 
+
 # Таблица api_keys
 class ApiKey(Base):
     __tablename__ = "api_keys"
@@ -60,6 +62,7 @@ class ApiKey(Base):
     # Связь с таблицей users
     user = relationship("User", back_populates="api_keys")
 
+
 # Таблица immich_hosts
 class ImmichHost(Base):
     __tablename__ = "immich_hosts"
@@ -72,6 +75,7 @@ class ImmichHost(Base):
 
     # Связь с таблицей users
     user = relationship("User", back_populates="immich_hosts")
+
 
 # Таблица albums
 class Album(Base):
@@ -87,6 +91,7 @@ class Album(Base):
     user = relationship("User", back_populates="albums")
     # Связь с таблицей media_files
     media_files = relationship("MediaFile", back_populates="album", cascade="all, delete")
+
 
 # Таблица media_files
 class MediaFile(Base):

@@ -1,9 +1,8 @@
-from typing import Any, Coroutine
 
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from bot.handlers.setup_handlers.setup_handler_consts import *
+from bot.handlers.setup_handlers.setup_handler_consts import CHANNEL_NAME, IMMICH_HOST
 from postgres.database import SessionLocal
 from postgres.models import User, Channel
 from utils.logger import logger
@@ -19,12 +18,9 @@ async def channel_name_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     db = SessionLocal()
     try:
-        channel_name = update.message.text.strip().replace('@', '')
+        channel_name = update.message.text.strip().replace("@", "")
         channel_name = channel_name.split("/")[-1]
-        user = db.query(User).filter(
-            User.telegram_id == update.effective_user.id,
-            User.deleted_at.is_(None)
-        ).first()
+        user = db.query(User).filter(User.telegram_id == update.effective_user.id, User.deleted_at.is_(None)).first()
 
         if not user:
             await update.message.reply_text("Ошибка: пользователь не найден. Начните с /start")
@@ -54,11 +50,15 @@ async def channel_name_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             return CHANNEL_NAME
 
         # Проверяем, есть ли уже такой канал у пользователя
-        existing_channel = db.query(Channel).filter(
-            Channel.user_id == user.user_id,
-            Channel.telegram_channel_id == telegram_channel_id,
-            Channel.deleted_at.is_(None)
-        ).first()
+        existing_channel = (
+            db.query(Channel)
+            .filter(
+                Channel.user_id == user.user_id,
+                Channel.telegram_channel_id == telegram_channel_id,
+                Channel.deleted_at.is_(None),
+            )
+            .first()
+        )
 
         if existing_channel:
             # Обновляем существующий канал
@@ -71,23 +71,18 @@ async def channel_name_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 user_id=user.user_id,
                 telegram_channel_id=telegram_channel_id,
                 channel_name=channel_name,
-                channel_url=f"https://t.me/{channel_name}"
+                channel_url=f"https://t.me/{channel_name}",
             )
             db.add(channel)
 
         db.commit()
 
-        await update.message.reply_text(
-            f"Канал '{channel_name}' успешно привязан!\n"
-            "Теперь введите URL Immich сервера:"
-        )
+        await update.message.reply_text(f"Канал '{channel_name}' успешно привязан!\nТеперь введите URL Immich сервера:")
         return IMMICH_HOST
 
     except Exception as e:
         logger.error(f"Error in channel_name_handler: {str(e)}")
-        await update.message.reply_text(
-            "Произошла ошибка. Пожалуйста, введите имя канала еще раз:"
-        )
+        await update.message.reply_text("Произошла ошибка. Пожалуйста, введите имя канала еще раз:")
         return CHANNEL_NAME
     finally:
         db.close()

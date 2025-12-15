@@ -27,12 +27,11 @@ class MediaPoster:
                 return False
 
             # Определяем формат файла
-            file_ext = media_file.media_url.lower().split('.')[-1] if media_file.media_url else ''
-            needs_conversion = file_ext in ['heic', 'heif']
+            file_ext = media_file.media_url.lower().split(".")[-1] if media_file.media_url else ""
+            needs_conversion = file_ext in ["heic", "heif"]
 
             # Конвертируем HEIC/HEIF в JPG если нужно
             if needs_conversion:
-
                 logger.info(f"Converting HEIC/HEIF to JPG for media {media_file.media_id}")
 
                 # Конвертируем в памяти
@@ -41,33 +40,30 @@ class MediaPoster:
 
             caption = await self._generate_caption(media_file)
 
-            if media_file.media_type == 'image':
-                filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'photo.jpg'
+            if media_file.media_type == "image":
+                filename = media_file.media_url.split("/")[-1] if media_file.media_url else "photo.jpg"
                 post = await self.app.bot.send_photo(
-                    chat_id=telegram_channel_id,
-                    photo=media_data,
-                    caption=caption,
-                    parse_mode='Markdown'
+                    chat_id=telegram_channel_id, photo=media_data, caption=caption, parse_mode="Markdown"
                 )
-            elif media_file.media_type == 'video':
-                filename = media_file.media_url.split('/')[-1] if media_file.media_url else 'video.mp4'
+            elif media_file.media_type == "video":
+                filename = media_file.media_url.split("/")[-1] if media_file.media_url else "video.mp4"
 
                 post = await self._send_video_safely(
                     chat_id=telegram_channel_id,
                     video_data=media_data,
                     caption=caption,
                     filename=filename,
-                    media_file=media_file
+                    media_file=media_file,
                 )
                 # return post
-            elif media_file.media_type == 'gif':
+            elif media_file.media_type == "gif":
                 filename = "animation.gif"
                 post = await self.app.bot.send_animation(
                     chat_id=telegram_channel_id,
                     animation=media_data,
                     filename=filename,
                     caption=caption,
-                    parse_mode='Markdown'
+                    parse_mode="Markdown",
                 )
             else:
                 logger.error(f"unknown media_type: {media_file.media_type}")
@@ -79,9 +75,7 @@ class MediaPoster:
 
             if discussion_chat_id:
                 discussion_msg_id = await forward_tracker.get(
-                    channel_id=telegram_channel_id,
-                    channel_msg_id=post.message_id,
-                    timeout=100.0
+                    channel_id=telegram_channel_id, channel_msg_id=post.message_id, timeout=2000.0
                 )
 
                 if discussion_msg_id:
@@ -89,16 +83,22 @@ class MediaPoster:
                         chat_id=discussion_chat_id,
                         document=raw_media_data,
                         filename=filename,
-                        reply_to_message_id=discussion_msg_id
+                        reply_to_message_id=discussion_msg_id,
                     )
 
-            logger.info(f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}")
+            logger.info(
+                f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}"
+            )
             return True
         except TelegramError as e:
-            print(f"Telegram error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}, channel_id: {telegram_channel_id}. Error: {str(e)}")
+            print(
+                f"Telegram error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}, channel_id: {telegram_channel_id}. Error: {str(e)}"
+            )
             return False
         except Exception as e:
-            print(f"Error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}. Error: {str(e)}")
+            print(
+                f"Error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}. Error: {str(e)}"
+            )
             return False
 
     def _format_exif_info(self, info: dict) -> str:
@@ -106,11 +106,11 @@ class MediaPoster:
         # exif = info.get('exifInfo', {})
         parts = []
 
-        if camera := info.get('camera'):
-            if camera.lower() not in ['none', 'null', 'unknown', 'undefined']:
+        if camera := info.get("camera"):
+            if camera.lower() not in ["none", "null", "unknown", "undefined"]:
                 parts.append(f"Снято на {camera}")
 
-        if date_str := info.get('date'):
+        if date_str := info.get("date"):
             try:
                 dt = datetime.fromisoformat(date_str)
                 formatted_date = dt.strftime("📅: %a, %d %B %Y, %H:%M %Z")
@@ -119,13 +119,13 @@ class MediaPoster:
                 logger.warn(f"Error parsing date: {e}")
 
         photo_details = []
-        if aperture := info.get('aperture'):
+        if aperture := info.get("aperture"):
             photo_details.append(f"ƒ/{aperture}")
-        if shutter := info.get('shutter'):
+        if shutter := info.get("shutter"):
             photo_details.append(f"{shutter}")
-        if focal := info.get('focal'):
+        if focal := info.get("focal"):
             photo_details.append(f"{focal} мм")
-        if iso := info.get('iso'):
+        if iso := info.get("iso"):
             photo_details.append(f"ISO {iso}")
 
         if photo_details:
@@ -136,9 +136,9 @@ class MediaPoster:
     async def _format_location(self, info: dict) -> Optional[Tuple[str, str]]:
         """Форматирование локации с определением города по координатам"""
         location = info.get("location")
-        location_name = location.get('location_name', {})
-        lat = location.get('latitude')
-        lon = location.get('longitude')
+        location_name = location.get("location_name", {})
+        lat = location.get("latitude")
+        lon = location.get("longitude")
 
         if not lat or not lon:
             return None
@@ -172,7 +172,7 @@ class MediaPoster:
                 parts.append(f"📍 {location_text}")
 
         # Генерация описания для изображений
-        if media_file.media_type in ['photo', 'gif']:
+        if media_file.media_type in ["photo", "gif"]:
             try:
                 # description = await generate_image_description(media_file)
                 description = ""
@@ -196,22 +196,27 @@ class MediaPoster:
         """Улучшенная конвертация HEIC в JPG с проверкой ImageMagick"""
         try:
             # Проверяем доступность convert
-            if not shutil.which('convert'):
+            if not shutil.which("convert"):
                 raise RuntimeError("ImageMagick (convert) not found in PATH")
 
-            with tempfile.NamedTemporaryFile(suffix='.heic') as tmp_input:
+            with tempfile.NamedTemporaryFile(suffix=".heic") as tmp_input:
                 tmp_input.write(input_data)
                 tmp_input.flush()
 
-                with tempfile.NamedTemporaryFile(suffix='.jpg') as tmp_output:
+                with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp_output:
                     # Добавляем параметры для лучшего качества
-                    subprocess.run([
-                        'convert',
-                        tmp_input.name,
-                        '-quality', '90%',  # Оптимальное качество
-                        '-auto-orient',  # Автоповорот
-                        tmp_output.name
-                    ], check=True, capture_output=True)
+                    subprocess.run(
+                        [
+                            "convert",
+                            tmp_input.name,
+                            "-quality",
+                            "90%",  # Оптимальное качество
+                            "-auto-orient",  # Автоповорот
+                            tmp_output.name,
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
 
                     return tmp_output.read()
 
@@ -221,7 +226,9 @@ class MediaPoster:
         except Exception as e:
             raise RuntimeError(f"HEIC conversion error: {str(e)}")
 
-    async def _send_video_safely(self, chat_id: int, video_data: bytes, caption: str, media_file: MediaFile, filename: str) -> bool:
+    async def _send_video_safely(
+        self, chat_id: int, video_data: bytes, caption: str, media_file: MediaFile, filename: str
+    ) -> bool:
         """Безопасная отправка видео с конвертацией и сжатием"""
         try:
             # Проверяем формат и размер
@@ -231,8 +238,10 @@ class MediaPoster:
             height = media_file.info["height"]
 
             # Конвертируем если нужно
-            if media_file.file_format != 'mp4' or file_size_mb > 50:
-                video_data, width, height = await self._convert_to_mpeg4(video_data, orientation=media_file.info["orientation"])
+            if media_file.file_format != "mp4" or file_size_mb > 50:
+                video_data, width, height = await self._convert_to_mpeg4(
+                    video_data, orientation=media_file.info["orientation"]
+                )
                 # filename = 'video.mp4'
 
             if media_file.info["orientation"] in [5, 6, 7, 8]:
@@ -245,14 +254,14 @@ class MediaPoster:
                     chat_id=chat_id,
                     video=video_data,
                     caption=caption,
-                    parse_mode='Markdown',
+                    parse_mode="Markdown",
                     supports_streaming=True,
                     width=width,
                     height=height,
                     read_timeout=300,
                     write_timeout=300,
                     connect_timeout=300,
-                    pool_timeout=300
+                    pool_timeout=300,
                 )
                 return True
             except TelegramError as e:
@@ -263,46 +272,52 @@ class MediaPoster:
             # Fallback - отправка как документ
             try:
                 await self.app.bot.send_document(
-                    chat_id=chat_id,
-                    document=video_data,
-                    caption=caption,
-                    parse_mode='Markdown',
-                    filename=filename
+                    chat_id=chat_id, document=video_data, caption=caption, parse_mode="Markdown", filename=filename
                 )
                 return True
             except Exception as e:
                 logger.error(f"Document send also failed: {str(e)}")
                 return False
 
-    async def _convert_to_mpeg4(self, input_data: bytes, orientation: int = 1, max_size_mb: int = 50) -> Tuple[
-                                                                                                            bytes, int, int] | None:
+    async def _convert_to_mpeg4(
+        self, input_data: bytes, orientation: int = 1, max_size_mb: int = 50
+    ) -> Tuple[bytes, int, int] | None:
         """Конвертирует видео с гарантированной совместимостью для Android"""
         try:
-            with tempfile.NamedTemporaryFile(suffix='.input') as tmp_input, \
-                    tempfile.NamedTemporaryFile(suffix='.mp4') as tmp_output:
-
+            with (
+                tempfile.NamedTemporaryFile(suffix=".input") as tmp_input,
+                tempfile.NamedTemporaryFile(suffix=".mp4") as tmp_output,
+            ):
                 # Записываем входные данные
                 tmp_input.write(input_data)
                 tmp_input.flush()
 
                 # Получаем информацию о видео
-                probe = subprocess.run([
-                    'ffprobe',
-                    '-v', 'error',
-                    '-select_streams', 'v:0',
-                    '-show_entries', 'stream=width,height,pix_fmt,color_space,color_primaries,color_transfer',
-                    '-of', 'json',
-                    tmp_input.name
-                ], capture_output=True, text=True)
+                probe = subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=width,height,pix_fmt,color_space,color_primaries,color_transfer",
+                        "-of",
+                        "json",
+                        tmp_input.name,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
 
                 if probe.returncode != 0:
                     logger.error(f"FFprobe error: {probe.stderr}")
                     return None
 
                 video_info = json.loads(probe.stdout)
-                stream_info = video_info['streams'][0]
-                width = int(stream_info['width'])
-                height = int(stream_info['height'])
+                stream_info = video_info["streams"][0]
+                width = int(stream_info["width"])
+                height = int(stream_info["height"])
                 orient_params, need_swap = self._get_android_orientation_params(orientation)
 
                 # Меняем размеры если нужно
@@ -311,35 +326,48 @@ class MediaPoster:
 
                 # Базовые параметры для максимальной совместимости
                 ffmpeg_cmd = [
-                    'ffmpeg', '-y',
-                    '-i', tmp_input.name,
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    tmp_input.name,
                     # Видео параметры (критически важные для Android)
-                    '-c:v', 'libx264',
-                    '-profile:v', 'baseline',  # Самый совместимый профиль
-                    '-level', '3.0',  # Поддержка старых устройств
-                    '-pix_fmt', 'yuv420p',  # Единственный надежный формат
-                    '-movflags', '+faststart',  # Для потокового воспроизведения
-                    '-preset', 'fast',  # Оптимальное соотношение скорость/качество
-                    '-crf', '23',  # Качество (23 - хороший баланс)
-
+                    "-c:v",
+                    "libx264",
+                    "-profile:v",
+                    "baseline",  # Самый совместимый профиль
+                    "-level",
+                    "3.0",  # Поддержка старых устройств
+                    "-pix_fmt",
+                    "yuv420p",  # Единственный надежный формат
+                    "-movflags",
+                    "+faststart",  # Для потокового воспроизведения
+                    "-preset",
+                    "fast",  # Оптимальное соотношение скорость/качество
+                    "-crf",
+                    "23",  # Качество (23 - хороший баланс)
                     # Гарантируем ключевые кадры
-                    '-force_key_frames', 'expr:gte(n,0+n_forced*3)',
-                    '-x264-params', 'scenecut=0:keyint=30:min-keyint=30:no-scenecut=1',
-
+                    "-force_key_frames",
+                    "expr:gte(n,0+n_forced*3)",
+                    "-x264-params",
+                    "scenecut=0:keyint=30:min-keyint=30:no-scenecut=1",
                     *orient_params,  # Добавляем параметры ориентации
-                    '-metadata:s:v:0', 'rotate=0',  # Сбрасываем метаданные поворота
-
+                    "-metadata:s:v:0",
+                    "rotate=0",  # Сбрасываем метаданные поворота
                     # Аудио параметры
-                    '-c:a', 'aac',
-                    '-b:a', '128k',
-                    '-ar', '44100',
-                    '-ac', '2',
-
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
                     # Важные флаги
-                    '-strict', 'experimental',  # Для полной совместимости
-                    '-f', 'mp4',  # Явное указание формата
-
-                    tmp_output.name
+                    "-strict",
+                    "experimental",  # Для полной совместимости
+                    "-f",
+                    "mp4",  # Явное указание формата
+                    tmp_output.name,
                 ]
 
                 logger.info(f"Executing Android-compatible command: {' '.join(ffmpeg_cmd)}")
@@ -362,7 +390,7 @@ class MediaPoster:
                 if output_size > max_size_mb:
                     return await self._compress_for_android(tmp_output.name, max_size_mb, width, height)
 
-                with open(tmp_output.name, 'rb') as f:
+                with open(tmp_output.name, "rb") as f:
                     return f.read(), width, height
 
         except Exception as e:
@@ -381,19 +409,19 @@ class MediaPoster:
 
         # 2 = Зеркальное отражение по вертикали
         elif orientation == 2:
-            return ['-vf', 'hflip'], False
+            return ["-vf", "hflip"], False
 
         # 3 = Поворот на 180°
         elif orientation == 3:
-            return ['-vf', 'hflip,vflip'], False
+            return ["-vf", "hflip,vflip"], False
 
         # 4 = Зеркальное отражение по горизонтали
         elif orientation == 4:
-            return ['-vf', 'vflip'], False
+            return ["-vf", "vflip"], False
 
         # 5 = Зеркальное отражение по вертикали + поворот 90° против часовой
         elif orientation == 5:
-            return ['-vf', 'transpose=2'], True
+            return ["-vf", "transpose=2"], True
 
         # 6 test
         elif orientation == 6:
@@ -401,11 +429,11 @@ class MediaPoster:
 
         # 7 = Зеркальное отражение по вертикали + поворот 90° по часовой
         elif orientation == 7:
-            return ['-vf', 'transpose=0'], True
+            return ["-vf", "transpose=0"], True
 
         # 8 = Поворот на 90° против часовой
         elif orientation == 8:
-            return ['-vf', 'transpose=2'], True
+            return ["-vf", "transpose=2"], True
 
         return [], False
 
@@ -413,19 +441,22 @@ class MediaPoster:
         """Проверяет ключевые параметры видео на совместимость с Android"""
         try:
             check_cmd = [
-                'ffprobe', '-v', 'error',
-                '-select_streams', 'v',
-                '-show_entries', 'stream=codec_name,profile,pix_fmt,width,height',
-                '-of', 'json',
-                file_path
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v",
+                "-show_entries",
+                "stream=codec_name,profile,pix_fmt,width,height",
+                "-of",
+                "json",
+                file_path,
             ]
             result = subprocess.run(check_cmd, capture_output=True, text=True)
             info = json.loads(result.stdout)
 
-            stream = info['streams'][0]
-            return (stream['codec_name'] == 'h264' and
-                    'Baseline' in stream['profile'] and
-                    stream['pix_fmt'] == 'yuv420p')
+            stream = info["streams"][0]
+            return stream["codec_name"] == "h264" and "Baseline" in stream["profile"] and stream["pix_fmt"] == "yuv420p"
         except Exception as e:
             logger.error(f"Android compatibility verification failed: {str(e)}")
             return False
@@ -433,83 +464,115 @@ class MediaPoster:
     def _get_video_dimensions(self, file_path: str, orientation: int) -> Tuple[int, int]:
         """Возвращает правильные размеры с учетом ориентации"""
         probe_cmd = [
-            'ffprobe', '-v', 'error',
-            '-select_streams', 'v:0',
-            '-show_entries', 'stream=width,height',
-            '-of', 'json',
-            file_path
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "json",
+            file_path,
         ]
         result = subprocess.run(probe_cmd, capture_output=True, text=True)
         info = json.loads(result.stdout)
-        w = int(info['streams'][0]['width'])
-        h = int(info['streams'][0]['height'])
+        w = int(info["streams"][0]["width"])
+        h = int(info["streams"][0]["height"])
 
         return (h, w) if orientation in [5, 6, 7, 8] else (w, h)
 
-    async def _compress_for_android(self, input_path: str, max_size_mb: int, width: int, height: int) -> Optional[
-        Tuple[bytes, int, int]]:
+    async def _compress_for_android(
+        self, input_path: str, max_size_mb: int, width: int, height: int
+    ) -> Optional[Tuple[bytes, int, int]]:
         """Специальное сжатие для Android"""
         try:
-            with tempfile.NamedTemporaryFile(suffix='.android.mp4') as tmp_out:
+            with tempfile.NamedTemporaryFile(suffix=".android.mp4") as tmp_out:
                 # Рассчитываем битрейт
-                duration = float(subprocess.check_output([
-                    'ffprobe', '-v', 'error',
-                    '-show_entries', 'format=duration',
-                    '-of', 'default=noprint_wrappers=1:nokey=1',
-                    input_path
-                ]))
+                duration = float(
+                    subprocess.check_output(
+                        [
+                            "ffprobe",
+                            "-v",
+                            "error",
+                            "-show_entries",
+                            "format=duration",
+                            "-of",
+                            "default=noprint_wrappers=1:nokey=1",
+                            input_path,
+                        ]
+                    )
+                )
 
                 target_bitrate = int((max_size_mb * 8192) / duration)  # в кбит/с
 
                 cmd = [
-                    'ffmpeg', '-y',
-                    '-i', input_path,
-                    '-c:v', 'libx264',
-                    '-profile:v', 'baseline',
-                    '-level', '3.0',
-                    '-pix_fmt', 'yuv420p',
-                    '-b:v', f'{target_bitrate}k',
-                    '-maxrate', f'{target_bitrate}k',
-                    '-bufsize', f'{target_bitrate * 2}k',
-                    '-preset', 'fast',
-                    '-movflags', '+faststart',
-                    '-c:a', 'aac',
-                    '-b:a', '96k',  # Чуть меньше аудио для видео
-                    '-ar', '44100',
-                    '-f', 'mp4',
-                    tmp_out.name
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    input_path,
+                    "-c:v",
+                    "libx264",
+                    "-profile:v",
+                    "baseline",
+                    "-level",
+                    "3.0",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-b:v",
+                    f"{target_bitrate}k",
+                    "-maxrate",
+                    f"{target_bitrate}k",
+                    "-bufsize",
+                    f"{target_bitrate * 2}k",
+                    "-preset",
+                    "fast",
+                    "-movflags",
+                    "+faststart",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "96k",  # Чуть меньше аудио для видео
+                    "-ar",
+                    "44100",
+                    "-f",
+                    "mp4",
+                    tmp_out.name,
                 ]
 
                 logger.info("Compression started")
-                result = subprocess.run(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True
-                )
+                result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 
                 if result.returncode != 0:
                     logger.error(f"Compression failed: {result.stderr.decode()}")
                     return None
 
-                probe = subprocess.run([
-                    'ffprobe',
-                    '-v', 'error',
-                    '-select_streams', 'v:0',
-                    '-show_entries', 'stream=width,height,sample_aspect_ratio,display_aspect_ratio',
-                    '-of', 'json',
-                    tmp_out.name
-                ], capture_output=True, text=True)
+                probe = subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=width,height,sample_aspect_ratio,display_aspect_ratio",
+                        "-of",
+                        "json",
+                        tmp_out.name,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
 
                 if probe.returncode != 0:
                     logger.error(f"FFprobe error: {probe.stderr}")
                     return None
 
                 video_info = json.loads(probe.stdout)
-                width = int(video_info['streams'][0]['width'])
-                height = int(video_info['streams'][0]['height'])
+                width = int(video_info["streams"][0]["width"])
+                height = int(video_info["streams"][0]["height"])
 
-                with open(tmp_out.name, 'rb') as f:
+                with open(tmp_out.name, "rb") as f:
                     return f.read(), width, height
         except Exception as e:
             logger.error(f"Android compression failed: {str(e)}")

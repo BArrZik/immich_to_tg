@@ -22,10 +22,7 @@ async def album_uuid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     db = SessionLocal()
     try:
         album_uuid = update.message.text.strip()
-        user = db.query(User).filter(
-            User.telegram_id == update.effective_user.id,
-            User.deleted_at.is_(None)
-        ).first()
+        user = db.query(User).filter(User.telegram_id == update.effective_user.id, User.deleted_at.is_(None)).first()
 
         if not user:
             await update.message.reply_text("Ошибка: пользователь не найден. Начните с /start")
@@ -34,14 +31,13 @@ async def album_uuid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Проверяем существование альбома и получаем его название
         try:
             album_info = await media_jobs.immich_service.get_user_album_info(user.telegram_id, album_uuid)
-            if not album_info.get('assets'):
+            if not album_info.get("assets"):
                 await update.message.reply_text(
-                    f"Альбом '{album_info.get('albumName', '')}' пуст. "
-                    "Добавьте фотографии в альбом и попробуйте снова:"
+                    f"Альбом '{album_info.get('albumName', '')}' пуст. Добавьте фотографии в альбом и попробуйте снова:"
                 )
                 return ALBUM_UUID
 
-            album_name = album_info.get('albumName', 'без названия')
+            album_name = album_info.get("albumName", "без названия")
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 await update.message.reply_text("Альбом не найден. Проверьте ID и попробуйте еще раз:")
@@ -53,9 +49,7 @@ async def album_uuid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ALBUM_UUID
 
         # Сохраняем альбом
-        db.query(Album).filter(
-            Album.user_id == user.user_id
-        ).update({"deleted_at": datetime.now()})
+        db.query(Album).filter(Album.user_id == user.user_id).update({"deleted_at": datetime.now()})
 
         new_album = Album(
             user_id=user.user_id,
@@ -68,7 +62,7 @@ async def album_uuid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"Альбом '{album_name}' успешно привязан!\n"
             f"Количество фотографий: {len(album_info['assets'])}\n"
             "Настройка завершена! Теперь вы можете использовать бота."
-            )
+        )
         return ConversationHandler.END
 
     except Exception as e:
@@ -77,4 +71,3 @@ async def album_uuid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ALBUM_UUID
     finally:
         db.close()
-

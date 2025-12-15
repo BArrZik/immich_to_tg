@@ -9,17 +9,18 @@ from postgres.database import SessionLocal
 from postgres.models import User, ApiKey, ImmichHost
 from utils.logger import logger
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class ImmichClient:
     def __init__(self, base_url: str, api_key: str):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"x-api-key": self.api_key},
             timeout=httpx.Timeout(30.0, connect=10.0),
-            limits=httpx.Limits(max_connections=10)
+            limits=httpx.Limits(max_connections=10),
         )
         self.last_used = datetime.now()
         self.created_at = datetime.now()
@@ -35,21 +36,21 @@ class ImmichClient:
         url = url.strip()
 
         # Удаляем возможные дублирующиеся слеши
-        url = url.replace(':///', '://')
+        url = url.replace(":///", "://")
 
         # Обработка localhost с портом
-        if url.startswith('localhost:'):
-            url = f'http://{url}'
-        elif url.startswith('localhost://'):
-            url = url.replace('localhost://', 'http://localhost/')
+        if url.startswith("localhost:"):
+            url = f"http://{url}"
+        elif url.startswith("localhost://"):
+            url = url.replace("localhost://", "http://localhost/")
 
         # Добавляем протокол, если отсутствует (для IP-адресов и доменных имен)
-        if not url.startswith(('http://', 'https://')):
+        if not url.startswith(("http://", "https://")):
             # Если есть порт (например, 192.168.1.1:2283 или example.com:8080)
-            if ':' in url.split('/')[0] and not url.startswith('['):  # Исключаем IPv6
-                url = f'http://{url}'
+            if ":" in url.split("/")[0] and not url.startswith("["):  # Исключаем IPv6
+                url = f"http://{url}"
             else:
-                url = f'https://{url}'
+                url = f"https://{url}"
 
         return url
 
@@ -81,7 +82,7 @@ class ImmichClient:
             async with asyncio.timeout(30):  # Общий таймаут операции
                 response = await self.client.get(
                     f"/api/albums/{album_uuid}",
-                    timeout=20.0  # Таймаут конкретного запроса
+                    timeout=20.0,  # Таймаут конкретного запроса
                 )
                 response.raise_for_status()
                 return response.json()
@@ -166,11 +167,7 @@ class ImmichClient:
 
 
 class ImmichService:
-    def __init__(
-            self,
-            client_ttl: timedelta = timedelta(hours=2),
-            max_clients: int = 1000
-    ):
+    def __init__(self, client_ttl: timedelta = timedelta(hours=2), max_clients: int = 1000):
         self.active_clients: Dict[int, ImmichClient] = {}
         self.client_ttl = client_ttl
         self.max_clients = max_clients
@@ -195,36 +192,35 @@ class ImmichService:
         :return: function
         """
         logger.info("running client_handler")
+
         @wraps(func)
-        async def wrapper(self: 'ImmichService', telegram_id: int, *args, **kwargs) -> T:
+        async def wrapper(self: "ImmichService", telegram_id: int, *args, **kwargs) -> T:
             async with self._lock:
                 if not await self.ensure_client(telegram_id):
                     # Попробуем создать клиента еще раз
                     db: Session = SessionLocal()
                     try:
-                        user = db.query(User).filter(
-                            User.telegram_id == telegram_id,
-                            User.deleted_at.is_(None)
-                        ).first()
+                        user = db.query(User).filter(User.telegram_id == telegram_id, User.deleted_at.is_(None)).first()
 
                         if not user:
                             raise ValueError(f"User {telegram_id} not found")
 
                         # Проверяем наличие необходимых данных
-                        has_host = db.query(ImmichHost).filter(
-                            ImmichHost.user_id == user.user_id,
-                            ImmichHost.deleted_at.is_(None)
-                        ).first() is not None
+                        has_host = (
+                            db.query(ImmichHost)
+                            .filter(ImmichHost.user_id == user.user_id, ImmichHost.deleted_at.is_(None))
+                            .first()
+                            is not None
+                        )
 
-                        has_key = db.query(ApiKey).filter(
-                            ApiKey.user_id == user.user_id,
-                            ApiKey.deleted_at.is_(None)
-                        ).first() is not None
+                        has_key = (
+                            db.query(ApiKey).filter(ApiKey.user_id == user.user_id, ApiKey.deleted_at.is_(None)).first()
+                            is not None
+                        )
 
                         if not has_host or not has_key:
                             raise ValueError(
-                                f"User {telegram_id} missing Immich configuration: "
-                                f"host={has_host}, api_key={has_key}"
+                                f"User {telegram_id} missing Immich configuration: host={has_host}, api_key={has_key}"
                             )
                     finally:
                         db.close()
@@ -261,28 +257,26 @@ class ImmichService:
         # Create new client
         db: Session = SessionLocal()
         try:
-            user = db.query(User).filter(
-                User.telegram_id == telegram_id,
-                User.deleted_at.is_(None)
-            ).first()
+            user = db.query(User).filter(User.telegram_id == telegram_id, User.deleted_at.is_(None)).first()
 
             if not user:
                 logger.error(f"User with telegram_id {telegram_id} not found")
                 return None
 
-            host = db.query(ImmichHost).filter(
-                ImmichHost.user_id == user.user_id,
-                ImmichHost.deleted_at.is_(None)
-            ).first()
+            host = (
+                db.query(ImmichHost).filter(ImmichHost.user_id == user.user_id, ImmichHost.deleted_at.is_(None)).first()
+            )
 
             if not host:
                 logger.error(f"No Immich host configured for user {telegram_id}")
                 return None
 
-            api_key = db.query(ApiKey).filter(
-                ApiKey.user_id == user.user_id,
-                ApiKey.deleted_at.is_(None)
-            ).order_by(ApiKey.created_at.desc()).first()
+            api_key = (
+                db.query(ApiKey)
+                .filter(ApiKey.user_id == user.user_id, ApiKey.deleted_at.is_(None))
+                .order_by(ApiKey.created_at.desc())
+                .first()
+            )
 
             if not api_key:
                 logger.error(f"No API key found for user {telegram_id}")

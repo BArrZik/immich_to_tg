@@ -17,16 +17,10 @@ async def api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     db = SessionLocal()
     try:
         api_key = update.message.text.strip()
-        user = db.query(User).filter(
-            User.telegram_id == update.effective_user.id,
-            User.deleted_at.is_(None)
-        ).first()
+        user = db.query(User).filter(User.telegram_id == update.effective_user.id, User.deleted_at.is_(None)).first()
 
         if user:
-            api_key_record = ApiKey(
-                user_id=user.user_id,
-                api_key=api_key
-            )
+            api_key_record = ApiKey(user_id=user.user_id, api_key=api_key)
             db.add(api_key_record)
             db.commit()
             await update.message.reply_text("Теперь введите ID альбома в Immich:")
@@ -36,4 +30,3 @@ async def api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return ConversationHandler.END
     finally:
         db.close()
-

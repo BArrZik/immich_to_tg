@@ -5,7 +5,10 @@ from bot.handlers.discussion_forward_tracker_handler import discussion_forward_h
 from bot.handlers.error_handler import error_handler
 from bot.handlers.setup_handlers.setup_handlers import setup_handlers
 from bot.handlers.delete_all_handler import delete_all_handler
-from cron_jobs.post_media_to_channel_job import manual_trigger_posting_media_to_channel_job, scheduled_posting_media_to_channel_job
+from cron_jobs.post_media_to_channel_job import (
+    manual_trigger_posting_media_to_channel_job,
+    scheduled_posting_media_to_channel_job,
+)
 
 from utils.config import TELEGRAM_TOKEN, ADMIN_IDS, POST_MEDIA_INTERVAL
 from functools import wraps
@@ -39,17 +42,11 @@ async def update_commands_for_all(bot: ContextTypes.DEFAULT_TYPE.bot) -> None:
     ]
 
     # Устанавливаем команды для всех пользователей
-    await bot.set_my_commands(
-        commands=common_commands,
-        scope=BotCommandScopeDefault()
-    )
+    await bot.set_my_commands(commands=common_commands, scope=BotCommandScopeDefault())
 
     # Устанавливаем расширенные команды для админов
     for admin_id in ADMIN_IDS:
-        await bot.set_my_commands(
-            commands=admin_commands,
-            scope=BotCommandScopeChat(admin_id)
-        )
+        await bot.set_my_commands(commands=admin_commands, scope=BotCommandScopeChat(admin_id))
 
 
 def init_bot() -> Application:
@@ -60,10 +57,12 @@ def init_bot() -> Application:
     """
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     setup_handlers(application)
-    application.add_handler(MessageHandler(
-        (filters.ChatType.GROUPS | filters.ChatType.SUPERGROUP) & filters.IS_AUTOMATIC_FORWARD,
-        discussion_forward_handler
-    ))
+    application.add_handler(
+        MessageHandler(
+            (filters.ChatType.GROUPS | filters.ChatType.SUPERGROUP) & filters.IS_AUTOMATIC_FORWARD,
+            discussion_forward_handler,
+        )
+    )
     application.add_handler(CommandHandler("delete_my_data", delete_all_handler))
 
     application.add_error_handler(error_handler)
@@ -81,13 +80,10 @@ def init_bot() -> Application:
     # Периодическое обновление команд (на всякий случай)
     application.job_queue.run_repeating(
         lambda ctx: update_commands_for_all(ctx.bot),
-        interval=600  # Каждые 10 минут
+        interval=600,  # Каждые 10 минут
     )
 
-    application.job_queue.run_repeating(
-        lambda ctx: forward_tracker.cleanup_expired(),
-        interval=60
-    )
+    application.job_queue.run_repeating(lambda ctx: forward_tracker.cleanup_expired(), interval=60)
 
     # Инициализация команд при старте
     async def post_init(app):

@@ -5,6 +5,7 @@ from pythonjsonlogger import json
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+
 class SingletonLogger:
     _instance = None
 
@@ -25,15 +26,12 @@ class SingletonLogger:
         formatter = json.JsonFormatter(
             fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
             rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
-            datefmt="%Y-%m-%dT%H:%M:%SZ"
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
         )
         log_handler.setFormatter(formatter)
 
         # Настройка базового логгера
-        logging.basicConfig(
-            level=LOG_LEVEL.upper(),
-            handlers=[log_handler]
-        )
+        logging.basicConfig(level=LOG_LEVEL.upper(), handlers=[log_handler])
 
         self.logger = logging.getLogger(__name__)
 
@@ -44,6 +42,7 @@ class SingletonLogger:
         :return: singleton instance of the logger
         """
         return self.logger
+
 
 # Создаем экземпляр логгера
 logger = SingletonLogger().get_logger()

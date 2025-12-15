@@ -1,4 +1,3 @@
-import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -14,6 +13,7 @@ fileConfig(config.config_file_name)  # type: ignore
 
 target_metadata = Base.metadata
 
+
 def run_migrations_offline():
     url = DATABASE_URL
     context.configure(
@@ -26,10 +26,9 @@ def run_migrations_offline():
     with context.begin_transaction():
         context.run_migrations()
 
+
 def run_migrations_online():
-    connectable_config = {
-        "sqlalchemy.url": DATABASE_URL
-    }
+    connectable_config = {"sqlalchemy.url": DATABASE_URL}
 
     connectable = engine_from_config(
         connectable_config,
@@ -38,13 +37,11 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, 
-            target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()
