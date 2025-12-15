@@ -15,7 +15,7 @@ class DiscussionForwardTracker:
         self._ttl = timedelta(seconds=ttl_seconds)
         self._waiters: Dict[Tuple[int, int], asyncio.Event] = defaultdict(asyncio.Event)
 
-    def store(self, channel_id: int, channel_msg_id: int, discussion_msg_id: int) -> None:
+    async def store(self, channel_id: int, channel_msg_id: int, discussion_msg_id: int) -> None:
         """
         Store mapping
 
@@ -30,8 +30,7 @@ class DiscussionForwardTracker:
         if key in self._waiters:
             self._waiters[key].set()
 
-    async def get(self, channel_id: int, channel_msg_id: int,
-                  timeout: float = 5.0) -> Optional[int]:
+    async def get(self, channel_id: int, channel_msg_id: int, timeout: float = 5.0) -> Optional[int]:
         """
         Get discussion_msg_id with timeout
 
@@ -40,6 +39,8 @@ class DiscussionForwardTracker:
         :param timeout: discussion message timeout
         :return: discussion message id
         """
+
+        logger.debug(f"Getting cache for key {channel_id}, {channel_msg_id}")
         key = (channel_id, channel_msg_id)
 
         # Проверить кэш
@@ -58,14 +59,13 @@ class DiscussionForwardTracker:
 
         return None
 
-    def cleanup_expired(self):
+    async def cleanup_expired(self):
         """
         Delete expired discussion messages
 
         :return: None"""
         now = datetime.now()
-        expired = [k for k, (_, ts) in self._mapping.items()
-                   if now - ts > self._ttl]
+        expired = [k for k, (_, ts) in self._mapping.items() if now - ts > self._ttl]
         for k in expired:
             del self._mapping[k]
             self._waiters.pop(k, None)
@@ -89,10 +89,10 @@ async def discussion_forward_handler(update: Update, context: ContextTypes.DEFAU
         return
 
     # forward_origin содержит информацию об оригинальном сообщении
-    if message.forward_origin and hasattr(message.forward_origin, 'chat'):
+    if message.forward_origin and hasattr(message.forward_origin, "chat"):
         channel_id = message.forward_origin.chat.id
         channel_msg_id = getattr(message.forward_origin, "message_id")
         discussion_msg_id = message.message_id
 
-        forward_tracker.store(channel_id, channel_msg_id, discussion_msg_id)
-        logger.debug(f"Tracked forward: channel {channel_id} msg {channel_msg_id} → discussion msg {discussion_msg_id}")
+        await forward_tracker.store(channel_id, channel_msg_id, discussion_msg_id)
+        logger.debug(f"Tracked forward: channel {channel_id} msg {channel_msg_id} -> discussion msg {discussion_msg_id}")

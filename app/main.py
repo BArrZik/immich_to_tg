@@ -9,11 +9,7 @@ def run_migrations():
     """Выполняет команду миграции Alembic."""
 
     # Формируем команду
-    command = [
-        "alembic",
-        "upgrade",
-        "head"
-    ]
+    command = ["alembic", "upgrade", "head"]
 
     logger.info(f"Running migrations command: {' '.join(command)}")
 
@@ -36,6 +32,7 @@ def main():
 
     bot = init_bot()
     bot.run_polling()
+
 
 if __name__ == "__main__":
     logger.info("main started")

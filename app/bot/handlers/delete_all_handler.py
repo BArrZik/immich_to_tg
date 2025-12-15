@@ -6,6 +6,7 @@ import datetime
 from postgres.database import SessionLocal
 from postgres.models import User, Channel, ApiKey, ImmichHost, Album, MediaFile
 
+
 async def delete_all_handler(bot_update, context) -> None:
     """
     Deletes all information about user who requested deletion
@@ -28,16 +29,11 @@ async def delete_all_handler(bot_update, context) -> None:
     now = datetime.datetime.now(datetime.UTC)
     user.deleted_at = now
 
-    db.execute(
-        update(Channel).where(Channel.user_id == user.user_id).values(deleted_at=now))
-    db.execute(
-        update(ApiKey).where(ApiKey.user_id == user.user_id).values(deleted_at=now))
-    db.execute(
-        update(ImmichHost).where(ImmichHost.user_id == user.user_id).values(deleted_at=now))
-    db.execute(
-        update(Album).where(Album.user_id == user.user_id).values(deleted_at=now))
-    db.execute(
-        update(MediaFile).where(MediaFile.user_id == user.user_id).values(deleted_at=now))
+    db.execute(update(Channel).where(Channel.user_id == user.user_id).values(deleted_at=now))
+    db.execute(update(ApiKey).where(ApiKey.user_id == user.user_id).values(deleted_at=now))
+    db.execute(update(ImmichHost).where(ImmichHost.user_id == user.user_id).values(deleted_at=now))
+    db.execute(update(Album).where(Album.user_id == user.user_id).values(deleted_at=now))
+    db.execute(update(MediaFile).where(MediaFile.user_id == user.user_id).values(deleted_at=now))
 
     db.commit()
     await bot_update.message.reply_text("Все ваши данные были удалены.")
