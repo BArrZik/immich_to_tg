@@ -58,7 +58,7 @@ class DiscussionForwardTracker:
 
         return None
 
-    def cleanup_expired(self):
+    async def cleanup_expired(self):
         """
         Delete expired discussion messages
 

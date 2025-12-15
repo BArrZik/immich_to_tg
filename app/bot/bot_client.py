@@ -1,7 +1,7 @@
 from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, Application
 
-from bot.handlers.discussion_forward_tracker_handler import discussion_forward_handler
+from bot.handlers.discussion_forward_tracker_handler import discussion_forward_handler, forward_tracker
 from bot.handlers.error_handler import error_handler
 from bot.handlers.setup_handlers.setup_handlers import setup_handlers
 from bot.handlers.delete_all_handler import delete_all_handler
@@ -82,6 +82,11 @@ def init_bot() -> Application:
     application.job_queue.run_repeating(
         lambda ctx: update_commands_for_all(ctx.bot),
         interval=600  # Каждые 10 минут
+    )
+
+    application.job_queue.run_repeating(
+        lambda ctx: forward_tracker.cleanup_expired(),
+        interval=60
     )
 
     # Инициализация команд при старте
