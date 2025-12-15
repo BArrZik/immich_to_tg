@@ -11,11 +11,11 @@ services:
       - .env
     environment:
       - APP_ENV=prod
-#    volumes:
-#      - ./app:/app
     restart: unless-stopped
     networks:
       - app_network
+    depends_on:
+      - db
 
 
   db:
