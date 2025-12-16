@@ -7,7 +7,7 @@ from bot.handlers.setup_handlers.setup_handlers import setup_handlers
 from bot.handlers.delete_all_handler import delete_all_handler
 from cron_jobs.post_media_to_channel_job import (
     manual_trigger_posting_media_to_channel_job,
-    scheduled_posting_media_to_channel_job,
+    posting_media_to_channel_job,
 )
 
 from utils.config import TELEGRAM_TOKEN, ADMIN_IDS, POST_MEDIA_INTERVAL
@@ -70,7 +70,7 @@ def init_bot() -> Application:
     application.add_handler(CommandHandler("process_media", manual_trigger_posting_media_to_channel_job))
 
     # Планирование периодической задачи (в секундах)
-    application.job_queue.run_repeating(scheduled_posting_media_to_channel_job, interval=POST_MEDIA_INTERVAL, first=10)
+    application.job_queue.run_repeating(posting_media_to_channel_job, interval=POST_MEDIA_INTERVAL, first=10)
 
     # Декорируем все CommandHandler'ы
     for handler in application.handlers[0]:

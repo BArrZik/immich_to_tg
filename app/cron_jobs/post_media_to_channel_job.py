@@ -354,11 +354,27 @@ class MediaJobs:
 # Глобальный экземпляр для использования в задачах
 media_jobs = MediaJobs()
 
+async def send_posting_report_to_chat(text: str, context: ContextTypes.DEFAULT_TYPE):
+    if context.job and context.job.data and "chat_id" in context.job.data:
+        try:
+            await context.bot.send_message(
+                chat_id=context.job.data["chat_id"],
+                text=text,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send message: {e}")
 
-async def scheduled_posting_media_to_channel_job(context: ContextTypes.DEFAULT_TYPE):
-    """Периодическая задача для планировщика"""
-    await immich_service.start()
-    await media_jobs.run_media_job(context)
+
+async def posting_media_to_channel_job(context: ContextTypes.DEFAULT_TYPE):
+    """Задача для планировщика"""
+    try:
+        await send_posting_report_to_chat("🔄 Запускаю обработку медиа...", context)
+        await immich_service.start()
+        await media_jobs.run_media_job(context)
+        await send_posting_report_to_chat("✅ Обработка медиа завершена", context)
+    except Exception as e:
+        logger.error(f"Failed to post media: {e}")
+        await send_posting_report_to_chat(f"❌ Ошибка: {str(e)}", context)
 
 
 async def manual_trigger_posting_media_to_channel_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -366,11 +382,11 @@ async def manual_trigger_posting_media_to_channel_job(update: Update, context: C
     if not is_user_allowed(update.effective_user):
         await update.message.reply_text("⛔ У вас нет прав для выполнения этой команды")
         return
-    await immich_service.start()
-    await update.message.reply_text("🔄 Запускаю обработку медиа...")
-    try:
-        await media_jobs.run_media_job(context)
-        await update.message.reply_text("✅ Обработка медиа завершена")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: {str(e)}")
-        logger.error(f"Manual media job error: {str(e)}")
+
+    context.application.job_queue.run_once(
+        posting_media_to_channel_job,
+        when=0,
+        name="manual_media_job",
+        data={"chat_id": update.effective_chat.id,}
+    )
+
