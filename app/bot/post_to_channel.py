@@ -116,7 +116,7 @@ class MediaPoster:
                 formatted_date = dt.strftime("📅: %a, %d %B %Y, %H:%M %Z")
                 parts.append(formatted_date)
             except Exception as e:
-                logger.warn(f"Error parsing date: {e}")
+                logger.warning(f"Error parsing date: {e}")
 
         photo_details = []
         if aperture := info.get("aperture"):
