@@ -353,7 +353,7 @@ class TestProcessAssets:
         assert result["info"]["width"] is None
         assert result["info"]["height"] is None
         assert result["info"]["orientation"] == 1
-        assert result["info"]["camera"] == "None None"
+        assert result["info"]["camera"] is None
         assert result["info"]["lens"] is None
         assert result["info"]["iso"] is None
         assert result["info"]["aperture"] is None

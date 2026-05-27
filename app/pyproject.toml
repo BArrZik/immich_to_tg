@@ -22,3 +22,8 @@ dependencies = [
     "redis>=5.2.1",
     "sqlalchemy>=2.0.40",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"

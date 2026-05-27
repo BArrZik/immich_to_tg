@@ -89,22 +89,22 @@ class TestFormatExifInfo:
         assert "ISO 100" in result
 
 
-class TestGetAndroidOrientationParams:
-    """Tests for _get_android_orientation_params method"""
+class TestGetAndroidOrientationFilter:
+    """Tests for _get_android_orientation_filter method"""
 
     @pytest.mark.parametrize(
-        "orientation,expected_params,expected_swap",
+        "orientation,expected_filter,expected_swap",
         [
-            (1, [], False),  # Normal
-            (2, ["-vf", "hflip"], False),  # Horizontal flip
-            (3, ["-vf", "hflip,vflip"], False),  # 180° rotation
-            (4, ["-vf", "vflip"], False),  # Vertical flip
-            (5, ["-vf", "transpose=2"], True),  # Vertical flip + 90° CCW
-            (6, [], True),  # 90° CW
-            (7, ["-vf", "transpose=0"], True),  # Vertical flip + 90° CW
-            (8, ["-vf", "transpose=2"], True),  # 90° CCW
-            (0, [], False),  # Unknown - defaults
-            (99, [], False),  # Unknown - defaults
+            (1, "", False),  # Normal
+            (2, "hflip", False),  # Horizontal flip
+            (3, "hflip,vflip", False),  # 180° rotation
+            (4, "vflip", False),  # Vertical flip
+            (5, "transpose=2", True),  # Vertical flip + 90° CCW
+            (6, "", True),  # 90° CW
+            (7, "transpose=0", True),  # Vertical flip + 90° CW
+            (8, "transpose=2", True),  # 90° CCW
+            (0, "", False),  # Unknown - defaults
+            (99, "", False),  # Unknown - defaults
         ],
         ids=[
             "orientation_1_normal",
@@ -119,9 +119,9 @@ class TestGetAndroidOrientationParams:
             "orientation_99_unknown",
         ],
     )
-    def test_get_android_orientation_params(self, media_poster, orientation, expected_params, expected_swap):
-        params, swap = media_poster._get_android_orientation_params(orientation)
-        assert params == expected_params
+    def test_get_android_orientation_filter(self, media_poster, orientation, expected_filter, expected_swap):
+        filter_expr, swap = media_poster._get_android_orientation_filter(orientation)
+        assert filter_expr == expected_filter
         assert swap == expected_swap
 
 
