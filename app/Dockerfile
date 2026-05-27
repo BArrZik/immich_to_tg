@@ -48,11 +48,13 @@ WORKDIR /app
 
 # Install ONLY runtime libraries
 # - libpq5: Runtime for psycopg2
-# - libheif1, libde265-0: Runtime for pyheif
+# - libheif1, libde265-0: Used by pillow-heif for HEIC/HEIF decode
+# - ffmpeg: video transcoding for Telegram-compatible MP4
 RUN apt-get update && apt-get install -y \
     libpq5 \
     libheif1 \
     libde265-0 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the environment from the builder stage
@@ -61,6 +63,9 @@ COPY --from=builder /app /app
 
 # Add the virtualenv to PATH
 ENV PATH="/app/.venv/bin:$PATH"
+
+# Flush stdout/stderr without buffering so logs appear immediately in `docker logs`
+ENV PYTHONUNBUFFERED=1
 
 # Setup Locale (Optional but recommended for image processing/filenames)
 ENV LANG=C.UTF-8

@@ -1,16 +1,28 @@
+import io
 import json
 import os
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple, List
+from zoneinfo import ZoneInfo
+
+import pillow_heif
+from PIL import Image, ImageOps
+from timezonefinder import TimezoneFinder
+
 from immich.immich_client import immich_service
 from postgres.models import MediaFile, User
+from telegram import Message
 from telegram.error import TelegramError
 
 from utils.logger import logger
 from bot.handlers.discussion_forward_tracker_handler import forward_tracker
+
+pillow_heif.register_heif_opener()
+
+_tz_finder = TimezoneFinder()
 
 
 class MediaPoster:
@@ -70,6 +82,10 @@ class MediaPoster:
                 return False
             logger.info(post)
 
+            if not post:
+                logger.error(f"Posting returned no message, user_id: {user.user_id}, media_uuid: {media_file.media_uuid}")
+                return False
+
             chat_full_info = await self.app.bot.get_chat(telegram_channel_id)
             discussion_chat_id = chat_full_info.linked_chat_id
 
@@ -79,31 +95,86 @@ class MediaPoster:
                 )
 
                 if discussion_msg_id:
-                    await self.app.bot.send_document(
-                        chat_id=discussion_chat_id,
-                        document=raw_media_data,
-                        filename=filename,
-                        reply_to_message_id=discussion_msg_id,
-                    )
+                    # Bot API не принимает файлы > 50 МБ. Лучше пропустить attachment, чем валить весь пост.
+                    raw_size_mb = len(raw_media_data) / (1024 * 1024)
+                    if raw_size_mb > 50:
+                        logger.warning(
+                            f"Skipping original file in discussion: too large ({raw_size_mb:.1f} MB > 50 MB), "
+                            f"media_uuid: {media_file.media_uuid}"
+                        )
+                    else:
+                        try:
+                            await self.app.bot.send_document(
+                                chat_id=discussion_chat_id,
+                                document=raw_media_data,
+                                filename=filename,
+                                reply_to_message_id=discussion_msg_id,
+                            )
+                        except TelegramError as e:
+                            # Discussion-attachment не должен заваливать основной пост
+                            logger.warning(
+                                f"Failed to attach original file in discussion, media_uuid: {media_file.media_uuid}. "
+                                f"Error: {str(e)}"
+                            )
 
             logger.info(
                 f"Successfully posted media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}"
             )
             return True
         except TelegramError as e:
-            print(
+            logger.exception(
                 f"Telegram error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}, channel_id: {telegram_channel_id}. Error: {str(e)}"
             )
             return False
         except Exception as e:
-            print(
+            logger.exception(
                 f"Error posting media, user_id: {user.user_id}, telegram_id: {user.telegram_id}, media_uuid: {media_file.media_uuid}. Error: {str(e)}"
             )
             return False
 
+    def _resolve_local_time(self, dt: datetime, location: Optional[dict]) -> Tuple[datetime, str]:
+        """
+        Возвращает (datetime в местном времени, лейбл вида 'MSK +3').
+        Приоритет: координаты → IANA-зона; иначе offset из самого datetime; иначе UTC.
+        """
+        # 1) Пытаемся определить IANA-зону по координатам
+        tz_name: Optional[str] = None
+        if location:
+            lat = location.get("latitude")
+            lon = location.get("longitude")
+            if lat is not None and lon is not None:
+                try:
+                    tz_name = _tz_finder.timezone_at(lat=float(lat), lng=float(lon))
+                except Exception as e:
+                    logger.warning(f"timezone_at failed for ({lat},{lon}): {e}")
+
+        if tz_name:
+            try:
+                tz = ZoneInfo(tz_name)
+                # naive datetime трактуем как UTC, дальше переводим в локальную зону
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                local_dt = dt.astimezone(tz)
+                abbr = local_dt.tzname() or tz_name.split("/")[-1]
+                offset = local_dt.utcoffset()
+                offset_hours = offset.total_seconds() / 3600 if offset else 0
+                offset_str = f"{offset_hours:+g}"  # +3, -4.5, +0
+                return local_dt, f"{abbr} {offset_str}"
+            except Exception as e:
+                logger.warning(f"ZoneInfo failed for {tz_name}: {e}")
+
+        # 2) В самом datetime есть offset (например, EXIF '2024-...+03:00')
+        if dt.tzinfo is not None and dt.utcoffset() is not None and dt.utcoffset().total_seconds() != 0:
+            offset_hours = dt.utcoffset().total_seconds() / 3600
+            return dt, f"UTC{offset_hours:+g}"
+
+        # 3) Fallback — UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt, "UTC"
+
     def _format_exif_info(self, info: dict) -> str:
         """Форматирование EXIF данных в текст"""
-        # exif = info.get('exifInfo', {})
         parts = []
 
         if camera := info.get("camera"):
@@ -113,7 +184,8 @@ class MediaPoster:
         if date_str := info.get("date"):
             try:
                 dt = datetime.fromisoformat(date_str)
-                formatted_date = dt.strftime("📅: %a, %d %B %Y, %H:%M %Z")
+                local_dt, tz_label = self._resolve_local_time(dt, info.get("location"))
+                formatted_date = local_dt.strftime(f"📅: %a, %d %B %Y, %H:%M {tz_label}")
                 parts.append(formatted_date)
             except Exception as e:
                 logger.warning(f"Error parsing date: {e}")
@@ -124,7 +196,10 @@ class MediaPoster:
         if shutter := info.get("shutter"):
             photo_details.append(f"{shutter}")
         if focal := info.get("focal"):
-            photo_details.append(f"{focal} мм")
+            try:
+                photo_details.append(f"{round(float(focal), 1):g} мм")
+            except (TypeError, ValueError):
+                photo_details.append(f"{focal} мм")
         if iso := info.get("iso"):
             photo_details.append(f"ISO {iso}")
 
@@ -193,46 +268,33 @@ class MediaPoster:
             return None
 
     def _convert_heic_to_jpg(self, input_data: bytes) -> bytes:
-        """Улучшенная конвертация HEIC в JPG с проверкой ImageMagick"""
+        """Конвертация HEIC/HEIF в JPG через pillow-heif (libheif в памяти)."""
+        if not input_data:
+            raise RuntimeError("HEIC conversion error: empty input data")
+
+        logger.info(
+            f"HEIC convert: input size={len(input_data)} bytes, "
+            f"magic={input_data[:16].hex()}"
+        )
+
         try:
-            # Проверяем доступность convert
-            if not shutil.which("convert"):
-                raise RuntimeError("ImageMagick (convert) not found in PATH")
+            with Image.open(io.BytesIO(input_data)) as image:
+                # Применяем EXIF-ориентацию и сводим к RGB (JPEG не умеет в alpha)
+                image = ImageOps.exif_transpose(image)
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
 
-            with tempfile.NamedTemporaryFile(suffix=".heic") as tmp_input:
-                tmp_input.write(input_data)
-                tmp_input.flush()
-
-                with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp_output:
-                    # Добавляем параметры для лучшего качества
-                    subprocess.run(
-                        [
-                            "convert",
-                            tmp_input.name,
-                            "-quality",
-                            "90%",  # Оптимальное качество
-                            "-auto-orient",  # Автоповорот
-                            tmp_output.name,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
-
-                    return tmp_output.read()
-
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Conversion failed: {e.stderr.decode().strip()}"
-            raise RuntimeError(error_msg)
+                buf = io.BytesIO()
+                image.save(buf, format="JPEG", quality=90, optimize=True)
+                return buf.getvalue()
         except Exception as e:
-            raise RuntimeError(f"HEIC conversion error: {str(e)}")
+            raise RuntimeError(f"HEIC conversion error: {e}") from e
 
     async def _send_video_safely(
         self, chat_id: int, video_data: bytes, caption: str, media_file: MediaFile, filename: str
-    ) -> bool:
-        """Безопасная отправка видео с конвертацией и сжатием"""
+    ) -> Optional[Message]:
+        """Безопасная отправка видео с конвертацией и сжатием. Возвращает отправленное Message или None."""
         try:
-            # Проверяем формат и размер
-            # file_format = media_file.file_format
             file_size_mb = len(video_data) / (1024 * 1024)
             width = media_file.info["width"]
             height = media_file.info["height"]
@@ -242,15 +304,15 @@ class MediaPoster:
                 video_data, width, height = await self._convert_to_mpeg4(
                     video_data, orientation=media_file.info["orientation"]
                 )
-                # filename = 'video.mp4'
 
             if media_file.info["orientation"] in [5, 6, 7, 8]:
                 width, height = height, width
 
-            # Отправляем видео
+            duration, thumbnail = self._probe_video_meta(video_data)
+
             try:
-                logger.info("sending video")
-                await self.app.bot.send_video(
+                logger.info(f"sending video (duration={duration}s, thumb={'yes' if thumbnail else 'no'})")
+                return await self.app.bot.send_video(
                     chat_id=chat_id,
                     video=video_data,
                     caption=caption,
@@ -258,26 +320,73 @@ class MediaPoster:
                     supports_streaming=True,
                     width=width,
                     height=height,
+                    duration=duration,
+                    thumbnail=thumbnail,
                     read_timeout=300,
                     write_timeout=300,
                     connect_timeout=300,
                     pool_timeout=300,
                 )
-                return True
             except TelegramError as e:
                 logger.error(f"Sending video, telegram error: {str(e)}")
-                return False
+                return None
         except Exception as e:
             logger.error(f"Video send failed: {str(e)}")
             # Fallback - отправка как документ
             try:
-                await self.app.bot.send_document(
+                return await self.app.bot.send_document(
                     chat_id=chat_id, document=video_data, caption=caption, parse_mode="Markdown", filename=filename
                 )
-                return True
             except Exception as e:
                 logger.error(f"Document send also failed: {str(e)}")
-                return False
+                return None
+
+    def _probe_video_meta(self, video_data: bytes) -> Tuple[int, Optional[bytes]]:
+        """Возвращает (duration в секундах, jpeg-thumbnail). Без duration Telegram показывает 00:00."""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp_video:
+                tmp_video.write(video_data)
+                tmp_video.flush()
+
+                # Длительность
+                duration = 0
+                probe = subprocess.run(
+                    [
+                        "ffprobe", "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        tmp_video.name,
+                    ],
+                    capture_output=True, text=True,
+                )
+                if probe.returncode == 0 and probe.stdout.strip():
+                    try:
+                        duration = int(float(probe.stdout.strip()))
+                    except ValueError:
+                        duration = 0
+
+                # Кадр-превью с 1-й секунды (или 0-й если видео короткое)
+                thumb_bytes: Optional[bytes] = None
+                with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp_thumb:
+                    seek = "00:00:01.000" if duration >= 1 else "00:00:00.000"
+                    thumb = subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-ss", seek, "-i", tmp_video.name,
+                            "-frames:v", "1",
+                            "-vf", "scale='min(320,iw)':-2",
+                            "-q:v", "5",
+                            tmp_thumb.name,
+                        ],
+                        capture_output=True,
+                    )
+                    if thumb.returncode == 0 and os.path.getsize(tmp_thumb.name) > 0:
+                        with open(tmp_thumb.name, "rb") as f:
+                            thumb_bytes = f.read()
+
+                return duration, thumb_bytes
+        except Exception as e:
+            logger.warning(f"Video meta probe failed: {e}")
+            return 0, None
 
     async def _convert_to_mpeg4(
         self, input_data: bytes, orientation: int = 1, max_size_mb: int = 50
@@ -318,55 +427,57 @@ class MediaPoster:
                 stream_info = video_info["streams"][0]
                 width = int(stream_info["width"])
                 height = int(stream_info["height"])
-                orient_params, need_swap = self._get_android_orientation_params(orientation)
+                color_transfer = stream_info.get("color_transfer", "")
+                is_hdr = color_transfer in ("arib-std-b67", "smpte2084")
+                logger.info(f"Source color_transfer={color_transfer or 'unknown'}, HDR={is_hdr}")
+
+                orient_filter, need_swap = self._get_android_orientation_filter(orientation)
 
                 # Меняем размеры если нужно
                 if need_swap:
                     width, height = height, width
 
-                # Базовые параметры для максимальной совместимости
+                # Собираем единую фильтр-цепочку
+                vf_chain = []
+                if orient_filter:
+                    vf_chain.append(orient_filter)
+                if is_hdr:
+                    # HDR -> SDR через zscale (требует ffmpeg с libzimg) + tonemap
+                    vf_chain.append(
+                        "zscale=t=linear:npl=100,"
+                        "format=gbrpf32le,"
+                        "zscale=p=bt709,"
+                        "tonemap=tonemap=hable:desat=0,"
+                        "zscale=t=bt709:m=bt709:r=tv,"
+                        "format=yuv420p"
+                    )
+                # Чётные размеры — требование H.264 yuv420p
+                vf_chain.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
+                vf_expr = ",".join(vf_chain)
+
+                # Параметры для максимальной совместимости (Android Telegram native player)
                 ffmpeg_cmd = [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    tmp_input.name,
-                    # Видео параметры (критически важные для Android)
-                    "-c:v",
-                    "libx264",
-                    "-profile:v",
-                    "baseline",  # Самый совместимый профиль
-                    "-level",
-                    "3.0",  # Поддержка старых устройств
-                    "-pix_fmt",
-                    "yuv420p",  # Единственный надежный формат
-                    "-movflags",
-                    "+faststart",  # Для потокового воспроизведения
-                    "-preset",
-                    "fast",  # Оптимальное соотношение скорость/качество
-                    "-crf",
-                    "23",  # Качество (23 - хороший баланс)
-                    # Гарантируем ключевые кадры
-                    "-force_key_frames",
-                    "expr:gte(n,0+n_forced*3)",
-                    "-x264-params",
-                    "scenecut=0:keyint=30:min-keyint=30:no-scenecut=1",
-                    *orient_params,  # Добавляем параметры ориентации
-                    "-metadata:s:v:0",
-                    "rotate=0",  # Сбрасываем метаданные поворота
-                    # Аудио параметры
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "128k",
-                    "-ar",
-                    "44100",
-                    "-ac",
-                    "2",
-                    # Важные флаги
-                    "-strict",
-                    "experimental",  # Для полной совместимости
-                    "-f",
-                    "mp4",  # Явное указание формата
+                    "ffmpeg", "-y",
+                    "-i", tmp_input.name,
+                    "-c:v", "libx264",
+                    "-profile:v", "high",      # high совместим со всеми современными Android
+                    "-level", "4.0",            # 1080p30, чего хватает для большинства источников
+                    "-pix_fmt", "yuv420p",
+                    "-vf", vf_expr,
+                    # Явные теги цветового пространства — без них плееры падают на BT.601 и дают зелёный/тёмный сдвиг
+                    "-colorspace", "bt709",
+                    "-color_primaries", "bt709",
+                    "-color_trc", "bt709",
+                    "-color_range", "tv",
+                    "-movflags", "+faststart",
+                    "-preset", "medium",
+                    "-crf", "23",
+                    "-metadata:s:v:0", "rotate=0",
+                    "-c:a", "aac",
+                    "-b:a", "128k",
+                    "-ar", "44100",
+                    "-ac", "2",
+                    "-f", "mp4",
                     tmp_output.name,
                 ]
 
@@ -397,45 +508,23 @@ class MediaPoster:
             logger.error(f"Android conversion error: {str(e)}", exc_info=True)
             return None
 
-    def _get_android_orientation_params(self, orientation: int) -> Tuple[List[str], bool]:
+    def _get_android_orientation_filter(self, orientation: int) -> Tuple[str, bool]:
         """
-        Возвращает параметры трансформации видео и флаг необходимости смены размеров
+        Возвращает ffmpeg filter-выражение для нужной ориентации и флаг смены W/H.
         :param orientation: EXIF ориентация (1-8)
-        :return: (ffmpeg параметры, нужно_менять_ширину_и_высоту)
+        :return: (filter-выражение или "", нужно_менять_ширину_и_высоту)
         """
-        # 1 = Нормальная ориентация
-        if orientation == 1:
-            return [], False
-
-        # 2 = Зеркальное отражение по вертикали
-        elif orientation == 2:
-            return ["-vf", "hflip"], False
-
-        # 3 = Поворот на 180°
-        elif orientation == 3:
-            return ["-vf", "hflip,vflip"], False
-
-        # 4 = Зеркальное отражение по горизонтали
-        elif orientation == 4:
-            return ["-vf", "vflip"], False
-
-        # 5 = Зеркальное отражение по вертикали + поворот 90° против часовой
-        elif orientation == 5:
-            return ["-vf", "transpose=2"], True
-
-        # 6 test
-        elif orientation == 6:
-            return [], True
-
-        # 7 = Зеркальное отражение по вертикали + поворот 90° по часовой
-        elif orientation == 7:
-            return ["-vf", "transpose=0"], True
-
-        # 8 = Поворот на 90° против часовой
-        elif orientation == 8:
-            return ["-vf", "transpose=2"], True
-
-        return [], False
+        mapping = {
+            1: ("", False),
+            2: ("hflip", False),
+            3: ("hflip,vflip", False),
+            4: ("vflip", False),
+            5: ("transpose=2", True),
+            6: ("", True),
+            7: ("transpose=0", True),
+            8: ("transpose=2", True),
+        }
+        return mapping.get(orientation, ("", False))
 
     def _verify_android_compatibility(self, file_path: str) -> bool:
         """Проверяет ключевые параметры видео на совместимость с Android"""
@@ -456,7 +545,7 @@ class MediaPoster:
             info = json.loads(result.stdout)
 
             stream = info["streams"][0]
-            return stream["codec_name"] == "h264" and "Baseline" in stream["profile"] and stream["pix_fmt"] == "yuv420p"
+            return stream["codec_name"] == "h264" and stream["pix_fmt"] == "yuv420p"
         except Exception as e:
             logger.error(f"Android compatibility verification failed: {str(e)}")
             return False
@@ -507,36 +596,27 @@ class MediaPoster:
                 target_bitrate = int((max_size_mb * 8192) / duration)  # в кбит/с
 
                 cmd = [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    input_path,
-                    "-c:v",
-                    "libx264",
-                    "-profile:v",
-                    "baseline",
-                    "-level",
-                    "3.0",
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-b:v",
-                    f"{target_bitrate}k",
-                    "-maxrate",
-                    f"{target_bitrate}k",
-                    "-bufsize",
-                    f"{target_bitrate * 2}k",
-                    "-preset",
-                    "fast",
-                    "-movflags",
-                    "+faststart",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "96k",  # Чуть меньше аудио для видео
-                    "-ar",
-                    "44100",
-                    "-f",
-                    "mp4",
+                    "ffmpeg", "-y",
+                    "-i", input_path,
+                    "-c:v", "libx264",
+                    "-profile:v", "high",
+                    "-level", "4.0",
+                    "-pix_fmt", "yuv420p",
+                    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                    "-colorspace", "bt709",
+                    "-color_primaries", "bt709",
+                    "-color_trc", "bt709",
+                    "-color_range", "tv",
+                    "-b:v", f"{target_bitrate}k",
+                    "-maxrate", f"{target_bitrate}k",
+                    "-bufsize", f"{target_bitrate * 2}k",
+                    "-preset", "medium",
+                    "-movflags", "+faststart",
+                    "-c:a", "aac",
+                    "-b:a", "96k",
+                    "-ar", "44100",
+                    "-ac", "2",
+                    "-f", "mp4",
                     tmp_out.name,
                 ]
 

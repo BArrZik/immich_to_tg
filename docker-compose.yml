@@ -3,10 +3,6 @@ version: '3.8'
 services:
   app:
     build: app
-    expose:
-      - "8000"
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
@@ -14,8 +10,10 @@ services:
     restart: unless-stopped
     networks:
       - app_network
+      - immich_default
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 
   db:
@@ -29,7 +27,14 @@ services:
       - "5432:5432"
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 networks:
+  immich_default:
+    external: true
   app_network:
     driver: bridge
