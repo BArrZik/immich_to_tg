@@ -189,7 +189,10 @@ class MediaJobs:
                             "orientation": int(asset.get("exifInfo", {}).get("orientation"))
                             if asset.get("exifInfo", {}).get("orientation")
                             else 1,
-                            "camera": f"{asset.get('exifInfo', {}).get('make')} {asset.get('exifInfo', {}).get('model')}",
+                            "camera": " ".join(
+                                p for p in (asset.get("exifInfo", {}).get("make"), asset.get("exifInfo", {}).get("model")) if p
+                            )
+                            or None,
                             "lens": asset.get("exifInfo", {}).get("lensModel"),
                             "iso": asset.get("exifInfo", {}).get("iso"),
                             "aperture": asset.get("exifInfo", {}).get("fNumber"),

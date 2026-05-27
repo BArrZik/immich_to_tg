@@ -89,7 +89,7 @@ class MediaPoster:
             chat_full_info = await self.app.bot.get_chat(telegram_channel_id)
             discussion_chat_id = chat_full_info.linked_chat_id
 
-            if discussion_chat_id:
+            if discussion_chat_id and media_file.media_type != "gif":
                 discussion_msg_id = await forward_tracker.get(
                     channel_id=telegram_channel_id, channel_msg_id=post.message_id, timeout=10.0
                 )
@@ -178,8 +178,9 @@ class MediaPoster:
         parts = []
 
         if camera := info.get("camera"):
-            if camera.lower() not in ["none", "null", "unknown", "undefined"]:
-                parts.append(f"Снято на {camera}")
+            cleaned = " ".join(w for w in camera.split() if w.lower() not in {"none", "null", "unknown", "undefined"})
+            if cleaned:
+                parts.append(f"Снято на {cleaned}")
 
         if date_str := info.get("date"):
             try:
